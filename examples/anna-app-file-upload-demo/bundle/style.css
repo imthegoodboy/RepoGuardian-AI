@@ -1,0 +1,169 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 1.25rem;
+  max-width: 760px;
+  line-height: 1.5;
+}
+
+h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+h2 { margin: 1.5rem 0 0.5rem; font-size: 1.05rem; }
+.muted { color: #888; font-size: 0.9rem; }
+section { border-top: 1px solid #ddd2; padding-top: 0.5rem; }
+
+textarea, input[type="text"], button {
+  font: inherit;
+  display: block;
+  margin: 0.4rem 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+input[type="text"] {
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #8884;
+  background: transparent;
+}
+button {
+  padding: 0.45rem 0.8rem;
+  width: auto;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid #8884;
+  background: #4682b422;
+}
+button.secondary { background: #80808018; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.tiny {
+  margin: 0;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+}
+button.danger { background: #c0392b1a; border-color: #c0392b44; }
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.row button { margin-top: 0; }
+
+.out {
+  background: #80808014;
+  border: 1px solid #8882;
+  border-radius: 6px;
+  padding: 0.6rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 0.82rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.out.err { color: #c0392b; }
+.out.ok { color: #2e7d32; }
+
+a { color: #4682b4; word-break: break-all; }
+
+details { margin-top: 0.5rem; }
+details summary { cursor: pointer; }
+
+ul.modes { margin: 0.5rem 0; padding-left: 1.1rem; }
+ul.modes li { margin: 0.3rem 0; }
+
+.mode-toggle {
+  margin: 0.6rem 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #8884;
+  border-radius: 6px;
+  background: #4682b40f;
+  align-items: center;
+}
+.mode-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.mode-toggle input[type="radio"] { width: auto; margin: 0; display: inline-block; }
+
+p.note { margin-top: 0.6rem; }
+
+/* ── Dropzone ─────────────────────────────────────────────── */
+.dropzone {
+  margin: 0.6rem 0;
+  padding: 1.4rem 1rem;
+  border: 2px dashed #8886;
+  border-radius: 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.dropzone:hover,
+.dropzone:focus-visible { border-color: #4682b4aa; outline: none; }
+.dropzone.drag { background: #4682b41a; border-color: #4682b4; }
+.dropzone .dz-title { margin: 0 0 0.2rem; font-weight: 600; }
+.dropzone p { margin: 0; }
+
+/* ── Selected (pending) files ─────────────────────────────── */
+.file-list, .remote-list { list-style: none; margin: 0.6rem 0; padding: 0; }
+
+.file-item, .remote-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #8883;
+  border-radius: 6px;
+  margin-bottom: 0.35rem;
+  font-size: 0.88rem;
+}
+.fi-meta, .ri-meta { display: flex; flex-direction: column; min-width: 0; }
+.fi-name, .ri-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+.fi-size, .ri-size { font-size: 0.78rem; }
+
+.fi-state {
+  flex: none;
+  font-size: 0.8rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  text-align: right;
+}
+.file-item.uploading { border-color: #4682b466; }
+.file-item.done { border-color: #2e7d3266; }
+.file-item.done .fi-state { color: #2e7d32; }
+.file-item.error { border-color: #c0392b66; }
+.file-item.error .fi-state { color: #c0392b; }
+
+.fi-link {
+  flex: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ri-actions { display: flex; gap: 0.4rem; flex: none; align-items: center; }
+
+/* ── Host Upload presets ──────────────────────────────────── */
+.preset-row { margin: 0.6rem 0; }
+.preset-row button { margin: 0; }
+.preset-hint { font-size: 0.78rem; }
+
+select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #8884;
+  background: transparent;
+  cursor: pointer;
+}

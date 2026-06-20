@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>RepoGuardian AI</title>
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="RepoGuardian navigation">
+        <div class="brand">
+          <img src="icon.svg" alt="" class="brand-mark" />
+          <div>
+            <strong>RepoGuardian AI</strong>
+            <span>Security engineer</span>
+          </div>
+        </div>
+
+        <nav class="nav" id="nav">
+          <button class="nav-item is-active" type="button" data-page="dashboard">
+            <span class="nav-icon" aria-hidden="true">D</span>
+            Dashboard
+          </button>
+          <button class="nav-item" type="button" data-page="scan">
+            <span class="nav-icon" aria-hidden="true">+</span>
+            New Scan
+          </button>
+          <button class="nav-item" type="button" data-page="findings">
+            <span class="nav-icon" aria-hidden="true">!</span>
+            Findings
+          </button>
+          <button class="nav-item" type="button" data-page="patch">
+            <span class="nav-icon" aria-hidden="true">Fx</span>
+            Patch
+          </button>
+          <button class="nav-item" type="button" data-page="pr">
+            <span class="nav-icon" aria-hidden="true">PR</span>
+            Pull Request
+          </button>
+          <button class="nav-item" type="button" data-page="history">
+            <span class="nav-icon" aria-hidden="true">H</span>
+            History
+          </button>
+          <button class="nav-item" type="button" data-page="settings">
+            <span class="nav-icon" aria-hidden="true">S</span>
+            Settings
+          </button>
+        </nav>
+
+        <div class="connection">
+          <span class="dot dot-off" id="conn-dot"></span>
+          <span id="conn-text">Connecting</span>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyeless">Autonomous repository security workspace</p>
+            <h1 id="page-title">Dashboard</h1>
+          </div>
+          <div class="top-actions">
+            <button class="btn btn-secondary" id="refresh-history-btn" type="button">Refresh</button>
+            <button class="btn btn-primary" id="quick-scan-btn" type="button">Start scan</button>
+          </div>
+        </header>
+
+        <section class="page is-active" id="page-dashboard" aria-labelledby="page-title">
+          <div class="metric-grid">
+            <article class="metric">
+              <span>Risk score</span>
+              <strong id="metric-risk">--</strong>
+              <small id="metric-grade">No scan yet</small>
+            </article>
+            <article class="metric">
+              <span>Critical</span>
+              <strong id="metric-critical">0</strong>
+              <small>release blockers</small>
+            </article>
+            <article class="metric">
+              <span>High</span>
+              <strong id="metric-high">0</strong>
+              <small>urgent fixes</small>
+            </article>
+            <article class="metric">
+              <span>Secrets</span>
+              <strong id="metric-secrets">0</strong>
+              <small>redacted evidence</small>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel panel-wide">
+              <header class="panel-head">
+                <div>
+                  <h2>Scan Workflow</h2>
+                  <p id="workflow-caption">Run a scan to see live progress.</p>
+                </div>
+              </header>
+              <ol class="workflow" id="workflow-list"></ol>
+            </section>
+
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>Risk Summary</h2>
+                  <p id="risk-mode">Deterministic until Anna sampling is granted.</p>
+                </div>
+              </header>
+              <p class="risk-copy" id="risk-copy">Connect a repository or upload an archive to start.</p>
+              <ul class="action-list" id="priority-actions"></ul>
+            </section>
+
+            <section class="panel panel-wide">
+              <header class="panel-head">
+                <div>
+                  <h2>Recent Findings</h2>
+                  <p id="findings-caption">Top issues appear here after a scan.</p>
+                </div>
+                <button class="btn btn-secondary" data-jump="findings" type="button">View all</button>
+              </header>
+              <div class="table-wrap">
+                <table class="findings-table">
+                  <thead>
+                    <tr>
+                      <th>Severity</th>
+                      <th>Finding</th>
+                      <th>Location</th>
+                      <th>Fix</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recent-findings"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="page-scan">
+          <div class="split">
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>GitHub Repository</h2>
+                  <p>Public repos scan without credentials. Private repos need a runtime token.</p>
+                </div>
+              </header>
+              <label class="field">
+                <span>Repository URL</span>
+                <input id="repo-url" type="url" placeholder="https://github.com/owner/repo" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Branch or ref</span>
+                <input id="repo-branch" type="text" placeholder="default branch" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>GitHub token for private clone</span>
+                <input id="scan-github-token" type="password" placeholder="Only used for this request" autocomplete="off" />
+              </label>
+              <button class="btn btn-primary btn-block" id="github-scan-btn" type="button">Connect GitHub and scan</button>
+            </section>
+
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>Upload Repository</h2>
+                  <p>Use a zip or tar archive for small local projects.</p>
+                </div>
+              </header>
+              <label class="drop-zone" for="archive-file">
+                <input id="archive-file" type="file" accept=".zip,.tar,.gz,.tgz,application/zip,application/gzip" />
+                <span>Upload repository archive</span>
+                <small id="archive-name">No file selected</small>
+              </label>
+              <button class="btn btn-secondary btn-block" id="archive-scan-btn" type="button">Scan uploaded archive</button>
+            </section>
+          </div>
+
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h2>Run Options</h2>
+                <p>Anna risk analysis uses host sampling when granted; scanner still works without it.</p>
+              </div>
+            </header>
+            <div class="options-row">
+              <label class="switch">
+                <input id="include-ai" type="checkbox" checked />
+                <span>AI risk analysis</span>
+              </label>
+              <label class="switch">
+                <input id="dependency-network" type="checkbox" checked />
+                <span>OSV and registry checks</span>
+              </label>
+              <label class="field compact">
+                <span>Max files</span>
+                <input id="max-files" type="number" value="6000" min="50" max="20000" />
+              </label>
+            </div>
+            <div class="status-box" id="scan-status">Idle</div>
+          </section>
+        </section>
+
+        <section class="page" id="page-findings">
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h2>Findings</h2>
+                <p id="all-findings-caption">Filter and inspect scanner evidence.</p>
+              </div>
+              <div class="filters">
+                <select id="severity-filter" aria-label="Severity filter">
+                  <option value="all">All severities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+                <select id="category-filter" aria-label="Category filter">
+                  <option value="all">All categories</option>
+                  <option value="dependency">Dependencies</option>
+                  <option value="secret">Secrets</option>
+                  <option value="static">Static analysis</option>
+                  <option value="injection">SQL injection</option>
+                  <option value="xss">XSS</option>
+                  <option value="architecture">Bad architecture</option>
+                  <option value="performance">Performance</option>
+                </select>
+              </div>
+            </header>
+            <div class="finding-list" id="finding-list"></div>
+          </section>
+
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h2>Security Agent</h2>
+                <p>Ask Anna's app agent to explain selected risk using scan evidence.</p>
+              </div>
+            </header>
+            <textarea id="agent-question" rows="3" placeholder="Explain the top release blocker and the safest fix path."></textarea>
+            <button class="btn btn-secondary" id="ask-agent-btn" type="button">Ask security agent</button>
+            <pre class="agent-output" id="agent-output">(no agent run yet)</pre>
+          </section>
+        </section>
+
+        <section class="page" id="page-patch">
+          <div class="split">
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>Approved Fix Patch</h2>
+                  <p>User approval is required before generating a patch artifact.</p>
+                </div>
+              </header>
+              <label class="switch danger">
+                <input id="patch-approved" type="checkbox" />
+                <span>I approve RepoGuardian AI generating a fix patch</span>
+              </label>
+              <button class="btn btn-primary btn-block" id="generate-patch-btn" type="button">AI generates fix</button>
+              <a class="btn btn-secondary btn-block is-disabled" id="download-patch-btn" href="#" aria-disabled="true">Download patch</a>
+              <div class="status-box" id="patch-status">Run a scan, review findings, then approve patch generation.</div>
+            </section>
+
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>Patch Preview</h2>
+                  <p>Safe review files are generated automatically. Source changes remain explicit recommendations.</p>
+                </div>
+              </header>
+              <pre class="result-box patch-preview" id="patch-output">(no patch generated)</pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="page-pr">
+          <div class="split">
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>Generate Pull Request</h2>
+                  <p>Dry run is safe. Real PRs require approval and a runtime GitHub token.</p>
+                </div>
+              </header>
+              <label class="field">
+                <span>Repository URL</span>
+                <input id="pr-repo-url" type="url" placeholder="https://github.com/owner/repo" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>Base branch</span>
+                <input id="pr-base-branch" type="text" placeholder="default branch" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>GitHub token</span>
+                <input id="pr-github-token" type="password" placeholder="Required only when dry run is off" autocomplete="off" />
+              </label>
+              <label class="switch">
+                <input id="pr-dry-run" type="checkbox" checked />
+                <span>Dry run only</span>
+              </label>
+              <label class="switch danger">
+                <input id="pr-approved" type="checkbox" />
+                <span>I approve creating a real pull request</span>
+              </label>
+              <button class="btn btn-primary btn-block" id="generate-pr-btn" type="button">Generate PR</button>
+            </section>
+
+            <section class="panel">
+              <header class="panel-head">
+                <div>
+                  <h2>PR Result</h2>
+                  <p>Generated files and PR URL appear here.</p>
+                </div>
+              </header>
+              <pre class="result-box" id="pr-output">(no PR generated)</pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="page-history">
+          <section class="panel">
+            <header class="panel-head">
+              <div>
+                <h2>Security Over Time</h2>
+                <p>History is stored through Anna storage for this app.</p>
+              </div>
+              <button class="btn btn-secondary" id="clear-history-btn" type="button">Clear history</button>
+            </header>
+            <div class="history-list" id="history-list"></div>
+          </section>
+        </section>
+
+        <section class="page" id="page-settings">
+          <section class="panel settings-panel">
+            <header class="panel-head">
+              <div>
+                <h2>Settings</h2>
+                <p>Defaults apply to new scans only.</p>
+              </div>
+            </header>
+            <label class="switch">
+              <input id="setting-ai-default" type="checkbox" checked />
+              <span>Enable Anna risk analysis by default</span>
+            </label>
+            <label class="switch">
+              <input id="setting-network-default" type="checkbox" checked />
+              <span>Enable vulnerability and latest-version lookups by default</span>
+            </label>
+            <label class="switch">
+              <input id="setting-artifact" type="checkbox" checked />
+              <span>Append scan summary artifact to chat</span>
+            </label>
+            <button class="btn btn-primary" id="save-settings-btn" type="button">Save settings</button>
+            <div class="status-box" id="settings-status">Settings are local to Anna storage.</div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="anna-tool-ids.js" defer></script>
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "anna-app-repoguardian-ai",
+  "private": true,
+  "version": "0.1.6",
+  "description": "RepoGuardian AI - Anna App security scanner with bundled Executa.",
+  "scripts": {
+    "dev": "anna-app dev --port 5184 --no-llm",
+    "validate": "anna-app validate --strict",
+    "fixture:verify": "anna-app fixture verify fixtures/happy-path.jsonl",
+    "test": "vitest run tests/bundle && python -m unittest discover -s tests/plugin",
+    "test:plugin": "python -m unittest discover -s tests/plugin",
+    "test:bundle": "vitest run tests/bundle",
+    "test:e2e": "playwright test --config playwright.config.cjs"
+  },
+  "devDependencies": {
+    "@anna-ai/cli": "^0.1.30",
+    "@playwright/test": "^1.61.0",
+    "vitest": "^4.1.9"
+  }
+}

@@ -1,0 +1,3 @@
+{"kind":"meta","t":0,"app":"repoguardian-ai","version":"0.1.3","note":"Minimal harness fixture for RepoGuardian AI smoke verification."}
+{"kind":"req","t":1,"id":"1","ns":"window","method":"ready","args":{}}
+{"kind":"res","t":2,"id":"1","ok":true,"result":{"ok":true}}

@@ -1,0 +1,26 @@
+# Python build / install artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+
+# Node / bundle artifacts
+node_modules/
+test-results/
+*.log
+
+# Anna local caches
+.anna/
+dist-anna/
+bundle/anna-tool-ids.js
+
+# Scanner scratch
+.repoguardian/
+tmp/

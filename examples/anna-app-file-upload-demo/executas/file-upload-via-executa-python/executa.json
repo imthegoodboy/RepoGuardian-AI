@@ -1,0 +1,47 @@
+{
+  "slug": "file-upload-via-executa",
+  "name": "Host Upload via Executa",
+  "version": "0.2.0",
+  "executa_type": "tool",
+  "description": "Demonstrates the host/uploadFile reverse-RPC (inline / negotiate / confirm) by generating a local scratch file and persisting it to short-lived host storage — bytes go plugin→R2 directly, never through tools.invoke. Backed by the host.upload capability.",
+
+  "tool_id": "tool-test-file-upload-12345678",
+  "type": "python",
+  "enabled": true,
+
+  "distribution": {
+    "active": "local",
+    "profiles": {
+      "local": {
+        "type": "local",
+        "supports_protocol": true,
+        "capabilities": ["make_sample", "host_upload_path"]
+      },
+      "binary": {
+        "type": "binary",
+        "executable_name": "tool-test-file-upload-12345678",
+        "supports_protocol": true,
+        "capabilities": ["make_sample", "host_upload_path"],
+        "binary_urls": {
+          "darwin-arm64": {
+            "url": "https://github.com/whtcjdtc2007/anna-executa-examples/releases/download/file-upload-via-executa-v0.2.0/tool-test-file-upload-12345678-darwin-arm64.tar.gz",
+            "entrypoint": "tool-test-file-upload-12345678",
+            "format": "tar.gz"
+          },
+          "darwin-x86_64": {
+            "url": "https://github.com/whtcjdtc2007/anna-executa-examples/releases/download/file-upload-via-executa-v0.2.0/tool-test-file-upload-12345678-darwin-x86_64.tar.gz",
+            "entrypoint": "tool-test-file-upload-12345678",
+            "format": "tar.gz"
+          },
+          "linux-x86_64": {
+            "url": "https://github.com/whtcjdtc2007/anna-executa-examples/releases/download/file-upload-via-executa-v0.2.0/tool-test-file-upload-12345678-linux-x86_64.tar.gz",
+            "entrypoint": "tool-test-file-upload-12345678",
+            "format": "tar.gz"
+          }
+        }
+      }
+    }
+  },
+
+  "_comment": "Publish metadata (slug/name/version/executa_type) is read by `anna-app apps publish`; the dev fields (tool_id/type/enabled) are read by `anna-app dev`. The `distribution` block is read by `anna-app executa publish` (invoked transitively by `apps push`/`apps publish`) and forwarded onto the server Executa row (distribution_type/executable_name/supports_protocol/capabilities/binary_urls) so the Agent can INSTALL this Executa — without it the tool is dev-only. `type:\"binary\"` + `binary_urls` ships a self-contained PyInstaller binary per platform; the URLs point at this repo's GitHub Release assets (tag `file-upload-via-executa-v<version>`), built by .github/workflows/anna-app-publish.yml. On `anna-app apps cut`, matrix-nexus mirrors these bytes into its own R2 (apps.anna.partners), content-addresses them by sha256, and pins binary_sha256 — so you do NOT need to host on R2 yourself or declare sha256 here (the mirror computes it). This dir is the `file-upload-via-executa` handle referenced by app.json#bundled_executas. host/uploadFile needs `anna-app dev` signed in (to mint an upload_token) but does NOT require `--storage aps`."
+}

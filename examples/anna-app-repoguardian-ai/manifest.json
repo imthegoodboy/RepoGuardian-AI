@@ -1,0 +1,100 @@
+{
+  "schema": 2,
+  "permissions": [
+    "tools.invoke",
+    "storage.read",
+    "storage.write",
+    "chat.append_artifact"
+  ],
+  "required_executas": [
+    {
+      "tool_id": "bundled:repoguardian-scanner",
+      "min_version": "0.1.1",
+      "version": "latest"
+    }
+  ],
+  "optional_executas": [],
+  "system_prompt_addendum": "The user has RepoGuardian AI open. Treat the repoguardian-scanner Executa as the source of truth for repository security scans. Use scan_repository for clone/unpack, dependency scan, static analysis, secret detection, SQL injection, XSS, bad architecture, performance issues, risk analysis, and suggestions. Follow RepoGuardian's security-agent protocol: scan first, keep summaries compact, prioritize secrets and critical/high vulnerabilities, require user approval before generating fixes, and use create_pull_request only after the user explicitly approves PR creation and provides a runtime GitHub token or connected-account equivalent. Do not invent scan results; cite the app's returned findings and risk summary.",
+  "user_message_prefix_template": "[RepoGuardian AI] {user_message}",
+  "tags": [
+    "security",
+    "developer-tools",
+    "github",
+    "dependencies",
+    "secrets"
+  ],
+  "ui": {
+    "bundle": {
+      "format": "static-spa",
+      "entry": "index.html",
+      "external_origins": []
+    },
+    "views": [
+      {
+        "name": "main",
+        "title": "RepoGuardian AI",
+        "default": true,
+        "entry": "index.html",
+        "min_size": { "w": 420, "h": 560 },
+        "default_size": { "w": 1180, "h": 760 },
+        "max_size": { "w": 1920, "h": 1200 },
+        "resizable": true,
+        "movable": true,
+        "single_instance": true,
+        "summary_template": "Repository security workspace: {repository}",
+        "icon": "icon.svg"
+      }
+    ],
+    "host_api": {
+      "tools": [
+        "required:bundled:repoguardian-scanner"
+      ],
+      "storage": [
+        "get",
+        "set",
+        "delete",
+        "list"
+      ],
+      "chat": [
+        "append_artifact"
+      ],
+      "upload": [
+        "inline"
+      ],
+      "window": [
+        "set_title"
+      ],
+      "agent": {
+        "session": {
+          "auto": true
+        },
+        "tools": []
+      }
+    },
+    "csp_overrides": {
+      "img-src": [
+        "'self'",
+        "data:",
+        "blob:"
+      ],
+      "font-src": [
+        "'self'",
+        "data:"
+      ],
+      "style-src": [
+        "'self'"
+      ],
+      "script-src": [
+        "'self'"
+      ]
+    },
+    "state_merge": "last_writer_wins"
+  },
+  "dev": {
+    "fixtures": [
+      "fixtures/*.jsonl"
+    ],
+    "seed_storage": {},
+    "user_id": 1
+  }
+}

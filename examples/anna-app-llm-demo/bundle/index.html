@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LLM Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>anna-app LLM Demo</h1>
+      <p class="muted">
+        Exercises <code>anna.llm.complete</code> (direct),
+        <code>anna.tools.invoke</code> against an Executa that calls
+        <code>sampling/createMessage</code> (single-shot <em>and</em> an N-step
+        <code>sample_chain</code> that exercises <code>max_calls</code> +
+        sampling-token renewal), and the full
+        <code>agent.session</code> surface
+        (create/run/cancel/history/refresh/delete/list)
+        over <strong>both</strong> the HOST API and the Reverse RPC transports,
+        including the <strong>session lifecycle</strong> (sliding idle window,
+        token-free release, resume-by-uuid after reload) and the
+        <strong>runtime-accurate tool surface</strong>
+        (<code>granted_tools</code> / <code>inherit_host_tools</code> on create
+        + the <code>run_meta</code> first frame with its
+        <code>NO_TOOLS_AVAILABLE</code> warning).
+      </p>
+    </header>
+
+    <section>
+      <h2>1. One-shot completion</h2>
+      <div class="mode-row">
+        <label for="llm-mode">LLM source:</label>
+        <select id="llm-mode">
+          <option value="direct" selected>Direct — anna.llm.complete</option>
+          <option value="executa">Via Executa — anna.tools.invoke → sampling/createMessage</option>
+        </select>
+      </div>
+      <p class="muted mode-hint" id="mode-hint">
+        Calls the host LLM directly from the iframe.
+      </p>
+      <textarea id="complete-input" rows="2">Say hello in three short sentences.</textarea>
+
+      <details class="params" open>
+        <summary>Parameters (shared by both LLM sources)</summary>
+        <p class="muted">
+          Empty fields are omitted from the request so the host applies its own
+          defaults. These map onto the <code>sampling/createMessage</code>
+          attribute surface: the direct path passes them as
+          <code>anna.llm.complete</code> args; the Executa path forwards them as
+          the <code>complete</code> tool's args.
+        </p>
+
+        <label for="cmp-system">System prompt (optional):</label>
+        <textarea
+          id="cmp-system"
+          rows="2"
+          placeholder="e.g. You are a terse assistant. Answer in one line."
+        ></textarea>
+
+        <div class="mode-row">
+          <label for="cmp-maxtokens">Max tokens:</label>
+          <input id="cmp-maxtokens" type="number" min="1" max="4096" value="256" class="num-input" />
+          <label for="cmp-temperature">Temperature:</label>
+          <input
+            id="cmp-temperature"
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            placeholder="0.7"
+            class="num-input"
+          />
+        </div>
+
+        <label for="cmp-stop">Stop sequences (comma-separated, optional):</label>
+        <input id="cmp-stop" type="text" class="text-input" placeholder="e.g. END, ###" />
+
+        <p class="muted params-group-label">
+          Model preferences (MCP <code>modelPreferences</code> — host may
+          substitute an equivalent model):
+        </p>
+        <div class="mode-row">
+          <label for="cmp-hint">Model hint:</label>
+          <input id="cmp-hint" type="text" class="text-input" placeholder="e.g. gpt-4o" />
+        </div>
+        <div class="mode-row">
+          <label for="cmp-cost">Cost priority:</label>
+          <input id="cmp-cost" type="number" min="0" max="1" step="0.1" placeholder="—" class="num-input" />
+          <label for="cmp-speed">Speed priority:</label>
+          <input id="cmp-speed" type="number" min="0" max="1" step="0.1" placeholder="—" class="num-input" />
+          <label for="cmp-intel">Intelligence priority:</label>
+          <input id="cmp-intel" type="number" min="0" max="1" step="0.1" placeholder="—" class="num-input" />
+        </div>
+      </details>
+
+      <button id="complete-btn">Run completion</button>
+      <pre id="complete-out" class="out">(no output yet)</pre>
+    </section>
+
+    <section>
+      <h2>1b. Sample chain (long invoke · token renewal)</h2>
+      <p class="muted">
+        Invokes the Executa's <code>sample_chain</code> tool, which fires
+        <strong>N sequential</strong> <code>sampling/createMessage</code> calls
+        inside a <em>single</em> invoke. This exercises the host's
+        <code>max_calls</code> quota and — with enough steps/delay to outlast the
+        10-minute sampling-token TTL — the <strong>token-renewal</strong> path
+        (forum <code>/t/83</code> "Signature has expired"). Requires the
+        <code>--real</code> LLM bridge; mock fixtures do not serve reverse
+        sampling.
+      </p>
+      <div class="mode-row">
+        <label for="chain-steps">Steps:</label>
+        <input id="chain-steps" type="number" min="1" max="8" value="3" class="num-input" />
+        <label for="chain-delay">Delay between steps (s):</label>
+        <input id="chain-delay" type="number" min="0" step="0.5" value="0" class="num-input" />
+        <label for="chain-maxtokens">Max tokens/step:</label>
+        <input id="chain-maxtokens" type="number" min="1" value="128" class="num-input" />
+      </div>
+      <textarea id="chain-input" rows="2">Tell me one surprising fact, then keep building on it.</textarea>
+      <button id="chain-btn">Run sample chain</button>
+      <pre id="chain-out" class="out">(no output yet)</pre>
+    </section>
+
+    <section>
+      <h2>2. Agent session (all methods)</h2>
+      <div class="mode-row">
+        <label for="session-transport">Transport:</label>
+        <select id="session-transport">
+          <option value="host" selected>HOST API — anna.agent.session.*</option>
+          <option value="executa">Reverse RPC — via Executa agent_session tool</option>
+        </select>
+      </div>
+      <p class="muted mode-hint" id="transport-hint">
+        Calls the host session API directly from the iframe.
+      </p>
+      <label for="session-system-prompt">Session system prompt (optional):</label>
+      <textarea
+        id="session-system-prompt"
+        rows="2"
+        placeholder="e.g. You are a terse math tutor. Answer with the number only."
+      ></textarea>
+      <p class="muted">
+        Applied at create time to every run in this session. A per-run
+        systemPrompt (if passed to run) still wins; the platform safety floor
+        always applies on top.
+      </p>
+      <div class="btn-row">
+        <button id="session-create-btn">create</button>
+        <input
+          id="session-uuid-input"
+          type="text"
+          class="uuid-input"
+          placeholder="app_session_uuid — create, type, or pick from list()"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <p class="muted" id="session-uuid-status">no session</p>
+      <p class="muted lifecycle" id="session-lifecycle">lifecycle: (none)</p>
+      <p class="muted lifecycle" id="session-tools">tools: (unknown — run or re-create to find out)</p>
+      <div id="tools-warning" class="out warn" hidden></div>
+      <textarea id="run-input" rows="2">What is 12 × 13?</textarea>
+      <div class="btn-row">
+        <button id="run-btn" disabled>run (streamed)</button>
+        <button id="cancel-btn" disabled>cancel</button>
+        <button id="history-btn" disabled>history</button>
+        <button id="refresh-btn" disabled>refresh</button>
+        <button id="delete-btn" disabled>delete</button>
+        <button id="list-btn">list</button>
+      </div>
+      <div id="session-list" class="session-list"></div>
+      <pre id="run-out" class="out">(no output yet)</pre>
+    </section>
+
+    <section>
+      <h2>Errors</h2>
+      <pre id="errors" class="out err">(none)</pre>
+    </section>
+
+    <!-- anna-tool-ids.js is AUTO-GENERATED by `anna-app dev` / `apps publish`.
+         It assigns `window.__ANNA_TOOL_IDS__` mapping each bundled handle
+         (e.g. "llm-via-executa") to the server-minted tool_id. Load it as a
+         classic script BEFORE the deferred module so app.js can read it.
+         Same-origin, so the `script-src 'self'` CSP allows it. -->
+    <script src="anna-tool-ids.js"></script>
+    <!-- app.js is a native ES module that imports the runtime SDK directly.
+         No inline script — the bundle CSP is `script-src 'self' <sdk-origin>`,
+         which blocks inline scripts but allows this external module and its
+         static import from the SDK origin. -->
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
