@@ -12,6 +12,17 @@ RepoGuardian AI can scan a GitHub repository or uploaded archive, detect risky c
 
 
 Demo video - https://youtu.be/WevbECYU-8I
+
+
+
+
+
+
+
+
+
+
+
 Current shipped state:
 
 - Anna App: `RepoGuardian AI`
