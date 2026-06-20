@@ -1,5 +1,5 @@
 const EXECUTA_HANDLE = "repoguardian-scanner";
-const DEV_FALLBACK_TOOL_ID = "tool-test-repoguardian-scanner-12345678";
+const DEV_FALLBACK_TOOL_ID = "tool-nikku696969-repoguardian-scanner-3tsnh6fp";
 const IS_LOCAL_ANNA_DEV =
   typeof window !== "undefined" &&
   ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);

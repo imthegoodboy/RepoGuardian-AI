@@ -9,7 +9,7 @@
   "required_executas": [
     {
       "tool_id": "bundled:repoguardian-scanner",
-      "min_version": "0.1.1",
+      "min_version": "0.1.2",
       "version": "latest"
     }
   ],

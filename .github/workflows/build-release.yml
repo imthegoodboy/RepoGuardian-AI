@@ -29,7 +29,8 @@ jobs:
   # ── Go Build (simplest, native cross-compilation) ────────
   build-go:
     if: >-
-      github.event_name == 'release' ||
+      (github.event_name == 'release' &&
+        !startsWith(github.event.release.tag_name, 'repoguardian-scanner-v')) ||
       inputs.language == 'all' ||
       inputs.language == 'go'
     runs-on: ubuntu-latest
@@ -95,7 +96,8 @@ jobs:
   # ── Python Build (requires matching OS runner) ───────────
   build-python:
     if: >-
-      github.event_name == 'release' ||
+      (github.event_name == 'release' &&
+        !startsWith(github.event.release.tag_name, 'repoguardian-scanner-v')) ||
       inputs.language == 'all' ||
       inputs.language == 'python'
     strategy:
@@ -156,7 +158,8 @@ jobs:
   # ── Node.js Build (pkg supports cross-compilation) ───────
   build-nodejs:
     if: >-
-      github.event_name == 'release' ||
+      (github.event_name == 'release' &&
+        !startsWith(github.event.release.tag_name, 'repoguardian-scanner-v')) ||
       inputs.language == 'all' ||
       inputs.language == 'nodejs'
     runs-on: ubuntu-latest

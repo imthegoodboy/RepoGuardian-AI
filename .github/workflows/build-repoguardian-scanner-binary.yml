@@ -1,0 +1,76 @@
+name: Build RepoGuardian Scanner binaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  EXECUTA_DIR: examples/anna-app-repoguardian-ai/executas/repoguardian-scanner
+  TOOL_ID: tool-nikku696969-repoguardian-scanner-3tsnh6fp
+  RELEASE_TAG: repoguardian-scanner-v0.1.2
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            os: macos-14
+          - platform: darwin-x86_64
+            os: macos-15-intel
+          - platform: linux-x86_64
+            os: ubuntu-latest
+          - platform: windows-x86_64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build and smoke test binary archive
+        working-directory: ${{ env.EXECUTA_DIR }}
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          TOOL_ID: ${{ env.TOOL_ID }}
+        run: python package_binary.py --smoke
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TOOL_ID }}-${{ matrix.platform }}
+          path: |
+            ${{ env.EXECUTA_DIR }}/dist-anna/${{ env.TOOL_ID }}-${{ matrix.platform }}.tar.gz
+            ${{ env.EXECUTA_DIR }}/dist-anna/${{ env.TOOL_ID }}-${{ matrix.platform }}.tar.gz.sha256
+            ${{ env.EXECUTA_DIR }}/dist-anna/${{ env.TOOL_ID }}-${{ matrix.platform }}.zip
+            ${{ env.EXECUTA_DIR }}/dist-anna/${{ env.TOOL_ID }}-${{ matrix.platform }}.zip.sha256
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: find release-assets -maxdepth 1 -type f -print | sort
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: RepoGuardian Scanner v0.1.2
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: release-assets/*

@@ -8,8 +8,8 @@ version = "0.1.0"
 source = { editable = "../../../../sdk/python" }
 
 [[package]]
-name = "tool-test-repoguardian-scanner-12345678"
-version = "0.1.1"
+name = "tool-nikku696969-repoguardian-scanner-3tsnh6fp"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "executa-sdk" },

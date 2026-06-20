@@ -1,6 +1,6 @@
 [project]
-name = "tool-test-repoguardian-scanner-12345678"
-version = "0.1.1"
+name = "tool-nikku696969-repoguardian-scanner-3tsnh6fp"
+version = "0.1.2"
 description = "RepoGuardian AI scanner Executa for Anna Apps."
 requires-python = ">=3.11"
 authors = [{ name = "Anna Developer" }]
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-"tool-test-repoguardian-scanner-12345678" = "repoguardian_scanner:main"
+"tool-nikku696969-repoguardian-scanner-3tsnh6fp" = "repoguardian_scanner:main"
 
 [tool.uv.sources]
 executa-sdk = { path = "../../../../sdk/python", editable = true }

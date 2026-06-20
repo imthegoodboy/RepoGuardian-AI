@@ -23,7 +23,7 @@ describe("repoguardian-ai manifest and bundle", () => {
     expect(app).toContain("__ANNA_TOOL_IDS__");
     expect(app).toContain("repoguardian-scanner");
     expect(app).toContain("IS_LOCAL_ANNA_DEV");
-    expect(app).toContain("tool-test-repoguardian-scanner-12345678");
+    expect(app).toContain("tool-nikku696969-repoguardian-scanner-3tsnh6fp");
   });
 
   it("passes long tool timeouts to both the scanner and Anna RPC client", () => {

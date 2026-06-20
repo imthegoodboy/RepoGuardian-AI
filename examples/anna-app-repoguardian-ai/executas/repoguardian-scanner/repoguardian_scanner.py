@@ -52,9 +52,12 @@ except ModuleNotFoundError:
 from executa_sdk import PROTOCOL_VERSION_V2, SamplingClient, SamplingError  # noqa: E402
 
 
+TOOL_ID = "tool-nikku696969-repoguardian-scanner-3tsnh6fp"
+
 MANIFEST = {
+    "name": TOOL_ID,
     "display_name": "RepoGuardian Scanner",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": (
         "Repository security scanner for RepoGuardian AI. Clones GitHub repos "
         "or unpacks uploaded archives, detects dependency vulnerabilities, "

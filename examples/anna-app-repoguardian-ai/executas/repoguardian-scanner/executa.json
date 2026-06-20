@@ -1,18 +1,45 @@
 {
   "slug": "repoguardian-scanner",
   "name": "RepoGuardian Scanner",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "executa_type": "tool",
   "description": "Clones or unpacks repositories, scans dependencies, secrets, and code risks, optionally asks Anna host sampling for risk synthesis, and can create GitHub pull requests with generated security reports.",
-  "tool_id": "tool-test-repoguardian-scanner-12345678",
+  "tool_id": "tool-nikku696969-repoguardian-scanner-3tsnh6fp",
   "type": "python",
   "enabled": true,
   "distribution": {
-    "active": "local",
+    "active": "binary",
     "profiles": {
       "local": {
         "type": "local",
         "supports_protocol": true
+      },
+      "binary": {
+        "type": "binary",
+        "executable_name": "tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+        "supports_protocol": true,
+        "binary_urls": {
+          "darwin-arm64": {
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.2/tool-nikku696969-repoguardian-scanner-3tsnh6fp-darwin-arm64.tar.gz",
+            "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+            "format": "tar.gz"
+          },
+          "darwin-x86_64": {
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.2/tool-nikku696969-repoguardian-scanner-3tsnh6fp-darwin-x86_64.tar.gz",
+            "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+            "format": "tar.gz"
+          },
+          "linux-x86_64": {
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.2/tool-nikku696969-repoguardian-scanner-3tsnh6fp-linux-x86_64.tar.gz",
+            "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+            "format": "tar.gz"
+          },
+          "windows-x86_64": {
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.2/tool-nikku696969-repoguardian-scanner-3tsnh6fp-windows-x86_64.zip",
+            "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp.exe",
+            "format": "zip"
+          }
+        }
       }
     }
   }

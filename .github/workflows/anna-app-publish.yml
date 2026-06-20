@@ -135,7 +135,9 @@ jobs:
                   })
               return out
 
-          apps = discover()
+          # RepoGuardian uses a dedicated workflow because it ships a Windows
+          # binary and a bin/manifest archive layout.
+          apps = [a for a in discover() if a["app_dir"] != "anna-app-repoguardian-ai"]
           if event == "release":
               sel = [a for a in apps if a["tag"] == ref_name]
               if not sel:
