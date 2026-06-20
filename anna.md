@@ -1,181 +1,174 @@
-# Anna App Developer Playbook
+# Anna App Build Playbook
 
-Last verified: 2026-06-19 with `anna-app` CLI `0.1.30`.
+Last updated: 2026-06-20.
 
-This is the reusable checklist for building, previewing, pushing, reviewing, and releasing Anna Apps from this workspace.
+This file is the reusable Anna build guide for this workspace. It is based on the real RepoGuardian AI build, test, binary Executa setup, Anna push/cut flow, and the issues we hit while making it work.
 
-Official docs checked:
+Use this before building the next Anna App.
 
-- https://staging.anna.partners/developers/overview/welcome
+Official docs and references used during this work:
+
+- https://anna.partners/dashboard
+- https://anna.partners/developers/overview/welcome
+- https://anna.partners/developers/reference
+- https://anna.partners/developers/reference/cli.md
+- https://anna.partners/developers/reference/lifecycle.md
+- https://anna.partners/developers/reference/executa-distribution.md
 - https://staging.anna.partners/developers/apps/app-intro
 - https://staging.anna.partners/developers/apps/app-manifest
 - https://staging.anna.partners/developers/apps/app-ui-overview
 - https://staging.anna.partners/developers/apps/app-ui-host-api
-- https://staging.anna.partners/developers/reference/cli
 
-## 1. Mental Model
+## 1. The Mental Model
 
-An Anna App has two main parts:
+An Anna App is not only a web page. It is a packaged app that runs inside the Anna runtime.
 
-- Listing metadata: name, slug, tagline, category, description, logos, screenshots, support/privacy URLs. In example projects this usually lives in `app.json`; the Developer Console also stores this metadata.
-- Version manifest: `manifest.json`. This declares runtime behavior, bundled Executas, permissions, UI bundle, host API access, and prompt behavior for app mentions.
+The important parts are:
 
-Typical app folder:
+- App metadata: `app.json`
+- Runtime manifest: `manifest.json`
+- Static UI bundle: `bundle/`
+- Optional bundled tools: `executas/`
+- Tests and fixtures: `tests/`, `fixtures/`
+- Deploy notes: `DEPLOY.md`
+
+The UI is loaded in Anna, then calls the Anna host API through the runtime SDK. Tool work runs through Executa, not directly in the browser.
+
+Typical flow:
+
+```text
+User opens Anna App
+  -> app UI loads from bundle/index.html
+  -> app connects to Anna runtime
+  -> UI calls anna.tools.invoke(...)
+  -> Anna dev harness or Matrix Agent starts the Executa
+  -> Executa returns scan/result/action data
+  -> UI renders output and lets user approve next actions
+```
+
+For RepoGuardian AI:
+
+```text
+RepoGuardian AI UI
+  -> bundled:repoguardian-scanner
+  -> tool-nikku696969-repoguardian-scanner-3tsnh6fp
+  -> scan_repository / generate_patch / create_pull_request
+```
+
+## 2. What We Built In RepoGuardian AI
+
+RepoGuardian AI is an Anna App that works as a repository security reviewer.
+
+It can:
+
+- scan a GitHub repository
+- scan an uploaded `.zip`, `.tar`, `.tar.gz`, or `.tgz` repo archive
+- detect redacted secrets
+- detect dependency risk
+- detect static code risk
+- detect SQL injection and XSS patterns
+- detect bad architecture and performance risks
+- summarize release blockers
+- keep Anna storage-backed scan history
+- generate a browser-side PDF report
+- generate an approval-gated patch
+- generate a dry-run pull request plan
+- create a real GitHub PR only after explicit user approval and a runtime token
+
+Important current IDs:
+
+```text
+App slug: repoguardian-ai
+Latest app version cut for testing: 0.1.10
+Tool handle in manifest: bundled:repoguardian-scanner
+Real Anna tool id: tool-nikku696969-repoguardian-scanner-3tsnh6fp
+Binary release used: repoguardian-scanner-v0.1.3
+```
+
+## 3. Recommended App Directory
+
+Use this shape for future apps:
 
 ```text
 my-anna-app/
   app.json
   manifest.json
   package.json
+  package-lock.json
+  DEPLOY.md
+  README.md
   bundle/
     index.html
-    style.css
     app.js
-    anna-tool-ids.js
+    style.css
     icon.svg
+    anna-tool-ids.js
   executas/
-    my-tool-python/
+    my-tool/
       executa.json
       pyproject.toml
+      uv.lock
       my_tool.py
+      package_binary.py
+  fixtures/
+    happy-path.jsonl
   tests/
-    smoke.mjs
-  DEPLOY.md
+    bundle/
+    plugin/
+    e2e/
 ```
 
-Important lifecycle:
-
-```text
-local files
-  -> validate
-  -> dev preview
-  -> apps push          # mutable working draft
-  -> apps cut X.Y.Z     # immutable version
-  -> submit-review      # DRAFT/REJECTED -> PENDING_REVIEW
-  -> release X.Y.Z      # only after APPROVED or already PUBLISHED
-```
-
-`apps push` is safe to run many times while developing. `apps cut` creates a real immutable version. `apps release` goes live, but Anna only allows it after app review approval.
-
-## 2. Hosts
-
-Use production by default:
-
-```powershell
-$ANNA_HOST = "https://anna.partners"
-```
-
-Use staging only when you intentionally want staging:
-
-```powershell
-$ANNA_HOST = "https://staging.anna.partners"
-```
-
-Do not mix accounts accidentally. `anna-app whoami --json` shows the current host and saved accounts.
-
-## 3. Install And Inspect CLI
-
-Check CLI:
-
-```powershell
-anna-app --version
-anna-app --help
-anna-app doctor
-```
-
-Useful command help:
-
-```powershell
-anna-app dev --help
-anna-app apps --help
-anna-app apps push --help
-anna-app apps cut --help
-anna-app apps release --help
-anna-app account set-handle --help
-```
-
-## 4. Logout, Login, Account
-
-Logout one host:
-
-```powershell
-anna-app logout --host https://anna.partners
-```
-
-Logout every saved Anna account:
-
-```powershell
-anna-app logout --all
-```
-
-Login to production:
-
-```powershell
-anna-app login --host https://anna.partners --no-browser
-```
-
-The CLI prints a `user_code` and confirmation URL. Open the URL, confirm the code, then verify:
-
-```powershell
-anna-app whoami --json
-```
-
-Set or rename developer handle if needed:
-
-```powershell
-anna-app account set-handle <your-handle> --host https://anna.partners --json
-```
-
-Notes:
-
-- Apps publish under `@handle/slug`.
-- If a command says `developer handle required`, set the handle.
-- If a command says `Verified developer required`, the logged-in account is not developer-enabled for that host, or you are using the wrong host.
-
-## 5. Create A New App
-
-Scaffold:
-
-```powershell
-cd C:\Users\parth\Desktop\CreatorOS-anna\examples
-anna-app init anna-app-my-tool --slug my-tool
-cd anna-app-my-tool
-```
-
-If building manually, create:
-
-```text
-app.json
-manifest.json
-bundle/index.html
-bundle/style.css
-bundle/app.js
-executas/<tool-name>/
-tests/smoke.mjs
-```
-
-Add a local `.gitignore`:
+Keep generated/heavy folders out of git:
 
 ```gitignore
+.anna/
 .venv/
 __pycache__/
 *.pyc
-test-results/
-.anna/
-dist-anna/
 node_modules/
+test-results/
+dist/
+dist-anna/
+build/
 ```
 
-## 6. Manifest Rules
+## 4. File Responsibilities
 
-`manifest.json` is strict. Unknown fields are rejected.
+### `app.json`
 
-Core fields:
+Store listing and version metadata:
+
+- slug
+- name
+- version
+- tagline
+- description
+- category
+- pricing model
+- bundled Executa paths
+
+When cutting a new Anna version, bump `app.json`, `package.json`, and `package-lock.json` together.
+
+### `manifest.json`
+
+This is the runtime contract. It declares:
+
+- schema
+- app permissions
+- required Executas
+- system prompt addendum
+- user message prefix
+- UI bundle entry
+- UI views and sizing
+- host API access
+- local dev fixtures
+
+Use `schema: 2` for UI apps.
+
+For bundled tools, use this pattern:
 
 ```json
 {
-  "schema": 2,
-  "permissions": ["tools.invoke", "storage.read", "storage.write"],
   "required_executas": [
     {
       "tool_id": "bundled:my-tool",
@@ -183,660 +176,679 @@ Core fields:
       "version": "latest"
     }
   ],
-  "optional_executas": [],
-  "system_prompt_addendum": "Use this app for ...",
-  "user_message_prefix_template": "[My App] {user_message}",
-  "tags": ["productivity"],
   "ui": {
-    "bundle": {
-      "format": "static-spa",
-      "entry": "index.html",
-      "external_origins": []
-    },
-    "views": [
-      {
-        "name": "main",
-        "title": "My App",
-        "default": true,
-        "entry": "index.html",
-        "min_size": { "w": 360, "h": 560 },
-        "default_size": { "w": 1120, "h": 760 },
-        "resizable": true,
-        "movable": true,
-        "single_instance": true
-      }
-    ],
     "host_api": {
-      "tools": ["required:bundled:my-tool"],
-      "storage": ["get", "set", "delete", "list"],
-      "chat": ["append_artifact"],
-      "window": ["set_title"],
-      "image": ["generate"],
-      "files": ["upload_init", "upload_finalize", "download_url", "list", "delete"],
-      "agent": {
-        "session": { "auto": true },
-        "tools": []
-      }
-    },
-    "state_merge": "last_writer_wins"
-  },
-  "dev": {
-    "seed_storage": {},
-    "user_id": 1
+      "tools": ["required:bundled:my-tool"]
+    }
   }
 }
 ```
 
-Important rules:
+Do not hard-code the production tool ID in `manifest.json`. Use the bundled handle and let Anna map it.
 
-- `schema: 1` is no UI.
-- `schema: 2` enables the UI runtime and `ui` section.
-- `dev` is local-harness-only and is stripped/ignored in production.
-- `user_message_prefix_template` must contain exactly one `{user_message}`.
-- `required_executas` auto-install for the user when the app is installed.
-- `optional_executas` are documented to the model but not auto-installed.
-- `schema: 2` apps may have no Executas if they only use host APIs.
-- For bundled tools, prefer `bundled:<handle>` in `required_executas` and `required:bundled:<handle>` in `ui.host_api.tools`.
+### `bundle/anna-tool-ids.js`
 
-Allowed top-level permissions include:
+This file is generated by Anna publish/push flows. It maps bundled handles to real Anna tool IDs.
 
-```text
-ui.svg
-fs.read
-fs.write
-tools.invoke
-chat.read
-chat.write_message
-chat.append_artifact
-artifact.create
-artifact.update
-artifact.delete
-llm.complete
-storage.read
-storage.write
-prefs.read
-```
-
-## 7. Host API Reality
-
-The iframe calls Anna through the runtime SDK:
+The UI should use:
 
 ```js
-const mod = await import("/static/anna-apps/_sdk/latest/index.js");
-const anna = await mod.AnnaAppRuntime.connect();
+window.__ANNA_TOOL_IDS__["repoguardian-scanner"]
 ```
 
-Implemented host APIs currently include:
+For local development, keep a dev fallback ID in `app.js`, but production should prefer the generated sidecar.
 
-- `window.*`: always granted; includes `hello`, `ready`, `set_title`, `resize`, `focus`, `close`, `open_view`.
-- `tools.invoke`: run declared Executas.
-- `chat.append_artifact`: attach app events/cards back to the Anna chat.
-- `storage.get/set/delete/list`: persistent app state in production; in-memory in basic local dev.
-- `agent.session.*`: Anna-managed agent sessions when granted.
-- `image.generate/edit`: host-mediated image generation/editing when granted.
-- `upload.inline/negotiate/confirm`: transient host uploads when granted.
-- `files.upload_init/upload_finalize/download_url/list/delete`: durable per-App object storage when the current host exposes the files API.
+### `executas/<tool>/executa.json`
 
-Stubbed or not production-ready in the Host API docs:
+This is the tool metadata:
 
-- `artifact.*`
-- `llm.complete`
-- `fs.*`
-- `prefs.*`
+- tool id
+- slug
+- name
+- version
+- type
+- distribution mode
+- binary URLs if using binary distribution
 
-Practical rule: use `tools.invoke` and `agent.session` for real workflows. Do not build core app behavior that depends only on direct `llm.complete`.
+The real Tool ID in Anna is locked after creation. Do not rename it casually.
 
-## 8. Executa Structure
+### `DEPLOY.md`
 
-Python Executa folder:
+Keep exact project commands here. This avoids forgetting version numbers, host names, test steps, and release boundaries.
+
+Use `$ANNA_HOST`, not `$HOST`, in PowerShell. `$HOST` is reserved and caused a real failure.
+
+## 5. Runtime Modes
+
+There are three different modes. Confusing them caused most of the early issues.
+
+### Standalone Browser Page
+
+If you open `bundle/index.html` directly or serve the page outside Anna, there is no Anna runtime.
+
+Expected error:
 
 ```text
-executas/my-tool-python/
-  executa.json
-  pyproject.toml
-  my_tool.py
-  uv.lock
+Anna runtime is not connected. Start with `anna-app dev` to run scans.
 ```
 
-Example `executa.json`:
+This is not a scanner bug. It means `window.anna` and `anna.tools.invoke` are unavailable.
 
-```json
-{
-  "slug": "my-tool",
-  "name": "My Tool",
-  "version": "0.1.0",
-  "executa_type": "tool",
-  "description": "Does useful work for my Anna App.",
-  "tool_id": "tool-test-my-tool-12345678",
-  "type": "python",
-  "enabled": true,
-  "distribution": {
-    "active": "local",
-    "profiles": {
-      "local": {
-        "type": "local",
-        "supports_protocol": true
-      }
-    }
-  }
-}
-```
+### Local Dev Harness
 
-Anna dev harness auto-discovers Executas under `executas/` in this order:
-
-1. `executa.json`
-2. `pyproject.toml`
-3. `package.json`
-4. `go.mod` with explicit `executa.json`
-5. `bin/<name>`
-
-Python default launch:
-
-```text
-uv run --project <dir> <tool_id>
-```
-
-### Binary Executa Packaging
-
-Local source mode is for development. For real distribution, package the Executa as a platform binary so users do not need Python, `uv`, or the source tree.
-
-Key rules:
-
-- Package the Executa process, not the whole app UI.
-- Keep `manifest.json` app dependencies on `bundled:<handle>`.
-- For normal source-mode app dev, the local `executa.json` and `pyproject.toml` may use the placeholder test Tool ID that the harness whitelists.
-- For production binary distribution, build artifacts with the real Anna-minted `tool_id` in binary filenames and archive entrypoints. Use an explicit build override if the source dev id stays as `tool-test-*`.
-- Commit all related files before running GitHub Actions: `executa.json`, `pyproject.toml`, `uv.lock`, packaging scripts, and workflows.
-- Use platform-specific builds. PyInstaller does not reliably cross-compile.
-
-Recommended archive layout:
-
-```text
-<tool_id>-darwin-arm64.tar.gz
-  bin/<tool_id>
-  manifest.json
-```
-
-`manifest.json` inside the archive should point at the binary:
-
-```json
-{
-  "runtime": {
-    "binary": {
-      "entrypoint": {
-        "default": "bin/<tool_id>"
-      },
-      "permissions": {
-        "bin/<tool_id>": "0o755"
-      }
-    }
-  }
-}
-```
-
-Common GitHub Actions runner mapping:
-
-- `macos-14` -> `darwin-arm64`
-- `macos-15-intel` -> `darwin-x86_64`
-- `ubuntu-latest` -> `linux-x86_64`
-
-After the GitHub Release exists, configure the Tool in Anna Developer Console as Binary distribution and add the platform download URLs. Then reinstall/refresh the local Agent and confirm the tool shows `Binary` and `Running`.
-
-## 9. Local Validation
-
-Always run:
+Use this while building:
 
 ```powershell
-cd C:\Users\parth\Desktop\CreatorOS-anna\examples\anna-app-my-tool
-npm test
-anna-app validate --strict
-```
-
-`--strict` adds bundle host API checks and catches common mismatches between `app.js` and `manifest.json`.
-
-For one Python file syntax check:
-
-```powershell
-python -m py_compile executas\my-tool-python\my_tool.py
-```
-
-## 10. Local Preview
-
-Offline/no real LLM:
-
-```powershell
-anna-app dev --port 5180 --no-llm
-```
-
-Production Anna LLM/account bridge:
-
-```powershell
-anna-app dev --port 5182 --llm-account https://anna.partners
-```
-
-With real Anna persistent storage:
-
-```powershell
-anna-app dev --port 5182 --llm-account https://anna.partners --storage aps
-```
-
-With a specific app slug for dev registration:
-
-```powershell
-anna-app dev --port 5182 --llm-account https://anna.partners --llm-app-slug my-tool
+cd examples\anna-app-repoguardian-ai
+anna-app dev --port 5184 --no-llm
 ```
 
 Open:
 
 ```text
-http://localhost:5180/
-http://localhost:5182/
+http://localhost:5184/
 ```
 
-If the port is busy, choose another port:
+With Anna-hosted LLM/sampling:
 
 ```powershell
-anna-app dev --port 5183 --llm-account https://anna.partners
+anna-app dev --port 5184 --llm-account https://anna.partners
 ```
 
-## 11. Publish Lifecycle
+The dev harness provides the runtime and can start local Executas.
 
-Use production unless intentionally testing staging:
+### Installed Anna App
+
+When the app is installed/opened from `https://anna.partners`, the UI can load in the web app, but Executa tools need an online Matrix Agent / Anna Agent for this user.
+
+If no agent is online, tool calls fail with:
+
+```text
+No Executa Agent is currently online for this user
+```
+
+This means the Anna web UI is online but the local tool runner is not online for the same account.
+
+Fix:
+
+1. Start/register the Matrix Agent / Anna Agent on the local machine.
+2. Confirm the same Anna account is logged in.
+3. Go to Anna `More -> Agents`.
+4. Confirm at least one agent is `Online`.
+5. Install essentials or reinstall the tool if needed.
+6. Confirm the bundled tool shows `Binary` and `Running` in agent details.
+
+Web-only apps can work fully in Anna. Apps that call Executa tools need an agent.
+
+## 6. API Key Rule
+
+Do not ask users for an OpenAI API key or model-provider key for normal Anna Apps.
+
+Anna owns the host LLM/sampling path. If sampling is granted, the app can ask Anna for synthesis. If sampling is not granted, the app should still work with deterministic behavior.
+
+RepoGuardian AI follows this rule:
+
+- no OpenAI API key
+- no model-provider key
+- optional GitHub token only at runtime
+- GitHub token only for private repo scan or real PR creation
+- tokens are cleared from inputs after each request
+- tokens are not persisted in Anna storage
+
+## 7. Host API Checklist
+
+Common host APIs:
+
+```json
+{
+  "tools": ["required:bundled:my-tool"],
+  "storage": ["get", "set", "delete", "list"],
+  "chat": ["append_artifact"],
+  "upload": ["inline"],
+  "window": ["set_title"],
+  "llm": ["complete"],
+  "agent": {
+    "session": {
+      "auto": true
+    },
+    "tools": []
+  }
+}
+```
+
+Practical rules:
+
+- If the UI calls `anna.tools.invoke`, declare `tools.invoke` and `ui.host_api.tools`.
+- If the UI uses app history, declare storage methods.
+- If the UI appends chat artifacts, declare chat access.
+- If the UI uploads inline files or patch artifacts, declare upload access.
+- If direct LLM is optional, feature-detect it and keep a deterministic fallback.
+- Always run `anna-app validate --strict` after changing host API usage.
+
+## 8. Keeping LLM Context Small
+
+Do not send entire repositories or huge scan output to the LLM.
+
+The RepoGuardian pattern:
+
+- scanner returns structured findings
+- UI builds a compact context
+- context includes source, summary, risk analysis, top findings, top suggestions, and warnings
+- max findings sent to the agent is capped
+- prompt tells the agent not to invent evidence
+
+Good agent rules:
+
+- evidence first
+- cite severity/title/location
+- do not invent files or vulnerabilities
+- require approval before patches or PRs
+- give fix plan and validation steps
+- state when evidence is incomplete
+
+## 9. Executa Tool Rules
+
+An Executa is an independent process that speaks JSON-RPC over stdio.
+
+It should support:
+
+- describe
+- health
+- method invocation
+- clean JSON output
+- no random stdout logs that break JSON-RPC
+
+For Python:
+
+```text
+executas/my-tool/
+  executa.json
+  pyproject.toml
+  uv.lock
+  my_tool.py
+```
+
+Local dev can run from source. Real users should install binaries when possible.
+
+## 10. Tool IDs And Bundled Handles
+
+Use two different concepts correctly:
+
+```text
+bundled handle: bundled:repoguardian-scanner
+real tool id: tool-nikku696969-repoguardian-scanner-3tsnh6fp
+```
+
+In `manifest.json`, use the bundled handle:
+
+```json
+"tool_id": "bundled:repoguardian-scanner"
+```
+
+In UI code, resolve the real tool id:
+
+```js
+const toolId =
+  window.__ANNA_TOOL_IDS__?.["repoguardian-scanner"] ||
+  DEV_FALLBACK_TOOL_ID;
+```
+
+In Anna Developer Console, the Tool ID is locked. Do not try to rename it after creation.
+
+## 11. Binary Executa Distribution
+
+For review-ready tools, package the Executa as a binary. Users should not need Python, `uv`, source code, or manual dependency installs.
+
+Recommended archive layout:
+
+```text
+tool-id-platform.tar.gz
+  bin/tool-id
+  manifest.json
+```
+
+Archive `manifest.json`:
+
+```json
+{
+  "name": "tool-id",
+  "version": "0.1.3",
+  "runtime": {
+    "binary": {
+      "entrypoint": {
+        "default": "bin/tool-id"
+      },
+      "permissions": {
+        "bin/tool-id": "0o755"
+      }
+    }
+  }
+}
+```
+
+Build per platform. PyInstaller does not reliably cross-compile.
+
+Good GitHub Actions runner mapping:
+
+```text
+macos-14       -> darwin-arm64
+macos-15-intel -> darwin-x86_64
+ubuntu-latest  -> linux-x86_64
+windows-latest -> windows-x86_64
+```
+
+After building:
+
+1. Upload archives to a GitHub Release.
+2. Put direct download URLs into the Anna Tool binary distribution config.
+3. Set visibility to `app_bundled` or public when the app bundles the tool.
+4. Reinstall/refresh the local Agent.
+5. Confirm the tool shows `Binary` and `Running`.
+
+If the tool is private or unpublished, other users may not be able to install it with the app.
+
+## 12. Local Test Gate
+
+Run this before push:
+
+```powershell
+cd examples\anna-app-repoguardian-ai
+npm test
+npm run fixture:verify
+anna-app validate --strict
+```
+
+For browser workflow:
+
+```powershell
+anna-app dev --port 5184 --no-llm
+npm run test:e2e
+```
+
+For full Anna LLM/sampling local test:
+
+```powershell
+anna-app dev --port 5184 --llm-account https://anna.partners
+```
+
+RepoGuardian AI's current e2e test verifies:
+
+- app loads in Anna dev harness
+- archive scan works
+- findings render
+- filters work
+- PDF report download is enabled and returns a real PDF
+- patch generation is blocked until approval
+- approved patch download works
+- dry-run PR plan works
+- token input clears after PR attempt
+- history and settings work
+- console has no unexpected app errors
+
+## 13. Push, Cut, Review, Release
+
+Use production unless intentionally testing staging.
+
+```powershell
+$ANNA_HOST = "https://anna.partners"
+cd examples\anna-app-repoguardian-ai
+
+npm test
+npm run fixture:verify
+anna-app validate --strict
+npm run test:e2e
+
+anna-app apps push --account $ANNA_HOST --json
+anna-app apps cut 0.1.10 --account $ANNA_HOST --json
+anna-app apps submit-review repoguardian-ai --account $ANNA_HOST --json
+anna-app apps status repoguardian-ai --account $ANNA_HOST --json
+```
+
+After review approval, and only when you actually want production release:
+
+```powershell
+anna-app apps release 0.1.10 --account $ANNA_HOST --json
+```
+
+Important lifecycle facts:
+
+- `apps push` uploads the mutable draft bundle.
+- `apps cut` creates an immutable app version.
+- Cutting a version does not automatically make it latest published.
+- `apps release` is the production/public step.
+- Do not release while you only want review/testing.
+- `submit-review` may fail if Anna says the app state is already `published`.
+
+Observed RepoGuardian state:
+
+```text
+0.1.10 was pushed and cut successfully.
+Anna created version id 237.
+Latest published still showed 0.1.9 because 0.1.10 was not released.
+submit-review was rejected because Anna said the app status was already published.
+```
+
+That is expected unless we intentionally run `apps release 0.1.10`.
+
+## 14. Versioning Rules
+
+When adding a user-facing feature:
+
+1. Bump `app.json`.
+2. Bump `package.json`.
+3. Bump `package-lock.json`.
+4. Update `DEPLOY.md`.
+5. Update README docs.
+6. Run tests.
+7. Push to GitHub.
+8. Run `anna-app apps push`.
+9. Run `anna-app apps cut <version>`.
+
+Do not cut the same version twice if it is meant to be immutable. Use the next patch version.
+
+## 15. Security And Approval Rules
+
+For security or repo-changing apps:
+
+- Never persist runtime tokens.
+- Clear token fields after requests.
+- Redact secret evidence before display/export.
+- Patches require explicit approval.
+- Real PR creation requires explicit approval.
+- Real PR creation requires runtime GitHub token.
+- Dry-run PR should work without a token.
+- Do not claim a patch or PR exists unless the tool returned it.
+- Do not let the agent invent scan results.
+
+RepoGuardian follows this:
+
+```text
+scan -> findings -> user review -> approval -> patch or PR
+```
+
+## 16. PDF Export Pattern
+
+The PDF report was added in the browser UI, not as a new Executa method.
+
+Why this was a good choice:
+
+- it works for current scan and history scan
+- it does not add a new JSON-RPC method
+- it does not require server storage
+- it does not require an API key
+- it keeps generated report data in the browser until download
+
+Implementation pattern:
+
+- add disabled link in top bar
+- enable link after `state.currentScan` exists
+- build PDF bytes in browser
+- create `Blob` with `application/pdf`
+- use `URL.createObjectURL`
+- set `download="repoguardian-report-<scan_id>.pdf"`
+- revoke old object URL when scan changes
+
+Test pattern:
+
+- e2e fetches link href
+- checks prefix `%PDF-`
+- checks size
+- checks extracted text contains expected report sections
+- writes PDF into Playwright output for inspection
+
+## 17. Common Issues We Hit
+
+### `Anna runtime is not connected`
+
+Meaning: app opened outside Anna runtime or dev harness.
+
+Fix:
+
+```powershell
+anna-app dev --port 5184 --no-llm
+```
+
+Then open `http://localhost:5184/`.
+
+### `No Executa Agent is currently online for this user`
+
+Meaning: the Anna web app is available, but no local Matrix Agent / Anna Agent is online to run Executa tools.
+
+Fix:
+
+- start/register the agent
+- log into the same Anna account
+- go to `More -> Agents`
+- confirm online count is greater than zero
+- install essentials or reinstall the tool
+- confirm the tool is running
+
+### `RPC tools.invoke timed out after 70000ms`
+
+Meaning: tool call exceeded default Anna RPC timeout.
+
+Fix in UI:
+
+```js
+const payload = { tool_id: TOOL_ID, method, args, timeoutMs };
+return state.anna.tools.invoke(payload, {
+  timeoutMs: timeoutMs + RPC_TIMEOUT_PADDING_MS,
+});
+```
+
+Also optimize scanner work and provide smaller scan limits.
+
+### PowerShell `$HOST` failure
+
+Bad:
 
 ```powershell
 $HOST = "https://anna.partners"
 ```
 
-Preflight:
+PowerShell reserves `$Host`.
+
+Good:
 
 ```powershell
-anna-app whoami --json
-anna-app validate --strict
-anna-app apps list --account $HOST --json
+$ANNA_HOST = "https://anna.partners"
 ```
 
-Push mutable draft:
+### Tool is visible but app cannot run it
+
+Check:
+
+- Tool visibility is `app_bundled` or public.
+- Distribution is correct: Local for local archive, Binary for release URLs.
+- Tool supports Executa protocol.
+- Agent has installed the tool.
+- Agent details show `Binary` and `Running`.
+- Platform URL matches current machine architecture.
+
+### Local vs Binary confusion
+
+Local distribution means the Agent expects an archive path on the Agent machine.
+
+Binary distribution means Anna Agent downloads from configured URLs.
+
+For real users, prefer Binary.
+
+### `submit-review` rejected because app is `published`
+
+This happened after cutting `0.1.10`.
+
+Meaning: Anna's lifecycle does not allow review submission from the current state.
+
+Do not treat this as a code bug. Check:
 
 ```powershell
-anna-app apps push --account $HOST --json
+anna-app apps status repoguardian-ai --account https://anna.partners --json
+anna-app apps versions repoguardian-ai --account https://anna.partners --json
 ```
 
-Cut immutable version:
+If the version should go live and review policy allows it, run release explicitly. Otherwise leave it cut for testing.
 
-```powershell
-anna-app apps cut 0.1.0 --account $HOST --json
-```
+### Cut version is not latest published
 
-Submit app for review:
+`apps cut` creates a version. It does not publish it.
 
-```powershell
-anna-app apps submit-review my-tool --account $HOST --json
-```
-
-Check status:
-
-```powershell
-anna-app apps status my-tool --account $HOST --json
-anna-app apps versions my-tool --account $HOST --json
-anna-app apps grants my-tool --account $HOST --json
-```
-
-Release after approval:
-
-```powershell
-anna-app apps release 0.1.0 --account $HOST --json
-```
-
-One-shot publish path:
-
-```powershell
-anna-app apps publish --bump patch --account $HOST --json
-```
-
-Auto-detect current folder:
-
-```powershell
-anna-app publish --bump patch --account $HOST --json
-```
-
-## 12. Updating An Existing App
-
-Normal code-change flow:
-
-```powershell
-npm test
-anna-app validate --strict
-anna-app apps push --account https://anna.partners --json
-```
-
-When ready for a new version:
-
-```powershell
-anna-app apps cut 0.1.1 --account https://anna.partners --json
-anna-app apps submit-review <slug> --account https://anna.partners --json
-```
-
-After approval:
-
-```powershell
-anna-app apps release 0.1.1 --account https://anna.partners --json
-```
-
-Update store/listing metadata:
-
-```powershell
-anna-app apps sync-meta --account https://anna.partners --json
-```
-
-Dry-run metadata change:
-
-```powershell
-anna-app apps sync-meta --dry-run --account https://anna.partners --json
-```
-
-## 13. Review And Release States
-
-Common states:
+Example observed:
 
 ```text
-draft
-pending_review
-approved
-published
-rejected
-archived
+cut: 0.1.10 created
+latest published: 0.1.9
 ```
 
-Rules:
+This is normal until `apps release 0.1.10`.
 
-- You can push while in draft.
-- You submit review from draft or rejected.
-- `apps release <version>` only works after Anna marks the app approved or when it is already published.
-- If release says `app status is pending_review`, wait for approval.
+### Frozen Executa version looks older
 
-## 14. Current CreatorOS AI Commands
+Anna app versions freeze bundled Executa snapshots. We saw a case where the app cut reported a frozen Executa version older than the tool row/binary release.
 
-For this repo's CreatorOS app:
+Do not guess. Check all of these:
 
-```powershell
-cd C:\Users\parth\Desktop\CreatorOS-anna\examples\anna-app-creatoros-ai
+- Tool row version in Developer Console
+- Tool manifest cache version
+- Binary URL and SHA values
+- App cut `frozen_executas`
+- Agent installed tool details
+- Runtime tool behavior in e2e test
 
-anna-app whoami --json
-npm test
-anna-app validate --strict
-anna-app dev --port 5182 --llm-account https://anna.partners
-```
+If runtime behavior is correct but metadata looks stale, document it and avoid destructive changes.
 
-Push/cut/review:
+### Windows CRLF warning
 
-```powershell
-anna-app apps push --account https://anna.partners --json
-anna-app apps cut 0.1.7 --account https://anna.partners --json
-anna-app apps submit-review creatoros-ai --account https://anna.partners --json
-anna-app apps status creatoros-ai --account https://anna.partners --json
-```
-
-Release after approval:
-
-```powershell
-anna-app apps release 0.1.7 --account https://anna.partners --json
-```
-
-Current known production state:
+This is normal:
 
 ```text
-host: https://anna.partners
-app_id: 75
-slug: creatoros-ai
-latest_cut_version: 0.1.7
-latest_cut_version_id: 172
-latest_push_revision: 8
-frozen_executa_version: 0.1.0
-status: pending_review
+LF will be replaced by CRLF the next time Git touches it
 ```
 
-## 15. Secrets And Environment Variables
+It is not a failure from `git diff --check`.
 
-Never commit secrets:
+### Port busy
 
-- API keys
-- PATs
-- OAuth client secrets
-- Composio keys
-- Video provider keys
-
- 
-For user-provided provider keys, prefer runtime entry in the app UI or Anna-managed secret/config storage. Do not write those keys into `manifest.json`, `app.json`, source code, or docs.
-
-If a key is pasted into chat, screenshots, terminal output, or issues, rotate it before production use.
-
-### Composio Media Connections
-
-For apps that connect YouTube, Instagram, TikTok, or other social channels through Composio, treat the project API key and OAuth auth configs as separate requirements.
-
-Minimum runtime secret:
+Use another port:
 
 ```powershell
-$env:COMPOSIO_API_KEY = "<composio-project-api-key>"
+anna-app dev --port 5185 --no-llm
 ```
 
-Toolkit auth configs for channel connection links:
+Or find the process:
 
 ```powershell
-$env:COMPOSIO_YOUTUBE_AUTH_CONFIG_ID = "<youtube-auth-config-id>"
-$env:COMPOSIO_INSTAGRAM_AUTH_CONFIG_ID = "<instagram-auth-config-id>"
-$env:COMPOSIO_TIKTOK_AUTH_CONFIG_ID = "<tiktok-auth-config-id>"
+Get-NetTCPConnection -LocalPort 5184 -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress,LocalPort,State,OwningProcess
 ```
 
-Expected behavior:
+### Dev server cleanup
 
-- `COMPOSIO_API_KEY` allows tool probing and connected-account listing.
-- The auth config IDs allow the Executa to call Composio's connected-account link endpoint and return an OAuth redirect URL.
-- If an auth config is missing, the app should show a setup-required state and block publishing/scheduling execution.
-- Do not claim a channel is connected until Composio returns an active connected account for the current app user.
-
-## 16. Testing Checklist
-
-Before push:
+When starting a hidden dev harness in PowerShell, stop the listener after e2e:
 
 ```powershell
-npm test
-anna-app validate --strict
-python -m py_compile executas\<tool>\*.py
+Get-NetTCPConnection -LocalPort 5184 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty OwningProcess -Unique |
+  ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
 ```
 
-Manual preview checklist:
-
-- App loads in Anna dev harness.
-- Main UI fits desktop and mobile widths.
-- No horizontal overflow on mobile.
-- All buttons have visible states.
-- Loading buttons restore their settled labels after overlapping tool checks.
-- `@` mention/platform selection works if relevant.
-- `tools.invoke` succeeds.
-- `storage.set/get` succeeds.
-- `chat.append_artifact` succeeds for handoff flows.
-- Optional image/video/provider flows fail safely when credentials are missing.
-- No key or token is rendered back into the UI.
-- Social scheduling blocks with a clear `Needs Connected Channel` state until the selected Composio connected account is active.
-- Workflow shows scheduled actions before the generated calendar so upload/schedule results are visible in the first viewport.
-
-## 17. Troubleshooting
-
-No PAT:
-
-```text
-no PAT on disk and ANNA_APP_PAT not set
-```
-
-Fix:
-
-```powershell
-anna-app login --host https://anna.partners --no-browser
-anna-app whoami --json
-```
-
-Wrong host:
-
-```text
-verified in browser but CLI still says forbidden
-```
-
-Fix: check whether the browser is on `https://anna.partners` but CLI is logged into staging.
-
-```powershell
-anna-app whoami --json
-anna-app login --host https://anna.partners --no-browser
-```
-
-Developer handle missing:
-
-```text
-developer handle required before registering a dev app
-```
-
-Fix:
-
-```powershell
-anna-app account set-handle <handle> --host https://anna.partners --json
-```
-
-Developer verification missing:
-
-```text
-forbidden (403): Verified developer required
-```
-
-Fix:
-
-- Confirm you are logged into the same host as the Developer Console.
-- Visit `https://anna.partners/developer`.
-- Complete developer verification for that account.
-- Retry `apps push`.
-
-Release blocked:
-
-```text
-app status is pending_review; release not permitted
-```
-
-Fix: wait for Anna review approval, then run:
-
-```powershell
-anna-app apps release <version> --account https://anna.partners --json
-```
-
-Host API permission denied:
-
-Fix both sides:
-
-- Add top-level `permissions` entry when required.
-- Add `ui.host_api.<namespace>` method allow-list.
-- Re-run `anna-app validate --strict`.
-
-Upload falls back to `Local Ready`:
-
-- `files.*` may report `endpoint not yet available` on a host that has not exposed Anna Files yet.
-- `upload.*` may report `upload_grant not enabled`; this grant is host/admin-side, not controlled by `manifest.permissions`.
-- Keep the UI fallback path: register media metadata locally, mark it `Local Ready`, and block external publishing until a connected provider account and real upload/file ref exist.
-
-Tool id drift:
-
-Fix:
-
-- Use `bundled:<handle>` in `manifest.json`.
-- Use `window.__ANNA_TOOL_IDS__[handle]` in `bundle/app.js`.
-- Let `anna-app apps push/publish` rewrite `bundle/anna-tool-ids.js`.
-
-Venv locked on Windows:
-
-Fix: stop the local dev harness or any Executa process, then remove generated artifacts.
-
-```powershell
-Get-CimInstance Win32_Process |
-  Where-Object { $_.CommandLine -like "*my-app*executas*" } |
-  Select-Object ProcessId,Name,CommandLine
-
-Stop-Process -Id <pid> -Force
-Remove-Item .\executas\<tool>\.venv -Recurse -Force
-```
-
-Port busy:
-
-```powershell
-anna-app dev --port 5183 --llm-account https://anna.partners
-```
-
-## 18. Destructive Commands
-
-Use these only when you really mean it.
-
-Unpublish a published app:
-
-```powershell
-anna-app apps unpublish <slug> --account https://anna.partners --yes --confirm <slug>
-```
-
-Archive:
-
-```powershell
-anna-app apps archive <slug> --account https://anna.partners --yes --confirm <slug>
-```
-
-Unarchive:
-
-```powershell
-anna-app apps unarchive <slug> --account https://anna.partners --yes
-```
-
-Delete:
-
-```powershell
-anna-app apps delete <slug> --account https://anna.partners --yes --confirm <slug>
-```
-
-The server may refuse delete if installs exist.
-
-## 19. Fast Start Template
-
-Copy this for a new app:
-
-```powershell
-$HOST = "https://anna.partners"
-$APP = "my-new-app"
-$VERSION = "0.1.0"
-
-cd C:\Users\parth\Desktop\CreatorOS-anna\examples
-anna-app init $APP --slug $APP
-cd $APP
-
-anna-app login --host $HOST --no-browser
-anna-app whoami --json
-anna-app account set-handle <handle> --host $HOST --json
-
-npm test
-anna-app validate --strict
-anna-app dev --port 5182 --llm-account $HOST
-
-anna-app apps push --account $HOST --json
-anna-app apps cut $VERSION --account $HOST --json
-anna-app apps submit-review $APP --account $HOST --json
-anna-app apps status $APP --account $HOST --json
-
-# After review approval:
-anna-app apps release $VERSION --account $HOST --json
-```
-
-## 20. Minimal Quality Bar
+## 18. Review-Ready App Checklist
 
 Before asking for review:
 
-- App validates with `anna-app validate --strict`.
-- App has a real `README.md`.
-- App has a deployment note or `DEPLOY.md`.
-- App has at least one smoke test.
-- App does not commit `.anna`, `.venv`, `node_modules`, `test-results`, PATs, or keys.
-- UI is usable at mobile width.
-- Host API grants match actual SDK calls.
-- Dangerous actions require explicit user approval.
-- App does not claim upload/publish/generation success unless an actual external provider returned success.
+- App has a clear real use case.
+- First screen is the usable app, not a marketing landing page.
+- `app.json` version is correct.
+- `package.json` and `package-lock.json` versions match.
+- `manifest.json` passes strict validation.
+- Host APIs match actual runtime calls.
+- Bundled Executas are declared with `bundled:<handle>`.
+- UI resolves generated tool IDs through `anna-tool-ids.js`.
+- Local fallback ID works in `anna-app dev`.
+- Tool calls use long enough timeouts.
+- Long scans have bounded file limits.
+- GitHub/private tokens are runtime-only.
+- Dangerous actions require explicit approval.
+- App has history/storage behavior tested.
+- App has at least one e2e happy path.
+- App has README and DEPLOY docs.
+- No `.anna`, `.venv`, `node_modules`, or `test-results` committed.
+- No API keys or tokens committed.
+- App is pushed to GitHub.
+- App is pushed and cut in Anna.
+
+## 19. Fast Start For Next Anna App
+
+Copy this and edit names/version:
+
+```powershell
+$ANNA_HOST = "https://anna.partners"
+$APP = "my-new-app"
+$VERSION = "0.1.0"
+
+cd C:\Users\parth\orca\anna-executa-examples\examples
+anna-app init $APP --slug $APP
+cd $APP
+
+anna-app whoami --json
+npm install
+npm test
+anna-app validate --strict
+anna-app dev --port 5184 --no-llm
+
+# In another terminal, if e2e exists:
+npm run test:e2e
+
+# Push draft:
+anna-app apps push --account $ANNA_HOST --json
+
+# Cut immutable version:
+anna-app apps cut $VERSION --account $ANNA_HOST --json
+
+# Submit for review when lifecycle allows:
+anna-app apps submit-review $APP --account $ANNA_HOST --json
+anna-app apps status $APP --account $ANNA_HOST --json
+
+# Only after approval and only when you want production:
+anna-app apps release $VERSION --account $ANNA_HOST --json
+```
+
+## 20. Fast Start For RepoGuardian AI
+
+```powershell
+cd C:\Users\parth\orca\anna-executa-examples\examples\anna-app-repoguardian-ai
+
+npm test
+npm run fixture:verify
+anna-app validate --strict
+anna-app dev --port 5184 --no-llm
+npm run test:e2e
+```
+
+Push/cut:
+
+```powershell
+$ANNA_HOST = "https://anna.partners"
+
+anna-app apps push --account $ANNA_HOST --json
+anna-app apps cut 0.1.10 --account $ANNA_HOST --json
+anna-app apps status repoguardian-ai --account $ANNA_HOST --json
+```
+
+Release only when explicitly ready:
+
+```powershell
+anna-app apps release 0.1.10 --account $ANNA_HOST --json
+```
+
+## 21. Final Rule
+
+Always separate these four steps:
+
+```text
+1. Build and test locally.
+2. Push source to GitHub.
+3. Push and cut Anna version for testing/review.
+4. Release to production only when explicitly approved.
+```
+
+Most mistakes come from mixing those steps or assuming one step automatically performs another.
