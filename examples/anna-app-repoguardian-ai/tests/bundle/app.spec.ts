@@ -62,4 +62,15 @@ describe("repoguardian-ai manifest and bundle", () => {
     expect(app).toContain("URL.createObjectURL");
     expect(app).toContain("upload.inline");
   });
+
+  it("exposes a PDF report download for the current scan", () => {
+    const html = readFileSync(join(root, "bundle", "index.html"), "utf8");
+    const app = readFileSync(join(root, "bundle", "app.js"), "utf8");
+    expect(html).toContain("download-report-pdf-btn");
+    expect(html).toContain("Download report PDF");
+    expect(app).toContain("buildScanReportPdf");
+    expect(app).toContain("application/pdf");
+    expect(app).toContain("%PDF-1.4");
+    expect(app).toContain("repoguardian-report-");
+  });
 });

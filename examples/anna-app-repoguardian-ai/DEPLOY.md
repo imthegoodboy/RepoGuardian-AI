@@ -12,7 +12,7 @@ anna-app validate --strict
 npm run test:e2e
 
 anna-app apps push --account $HOST --json
-anna-app apps cut 0.1.9 --account $HOST --json
+anna-app apps cut 0.1.10 --account $HOST --json
 anna-app apps submit-review repoguardian-ai --account $HOST --json
 anna-app apps status repoguardian-ai --account $HOST --json
 ```
@@ -20,7 +20,7 @@ anna-app apps status repoguardian-ai --account $HOST --json
 After review approval:
 
 ```powershell
-anna-app apps release 0.1.9 --account $HOST --json
+anna-app apps release 0.1.10 --account $HOST --json
 ```
 
 Before review, verify:
@@ -31,6 +31,7 @@ Before review, verify:
 - archive scan succeeds for a small zip
 - findings render on Dashboard and Findings pages
 - SQL injection, XSS, secrets, architecture, and performance findings are visible in the filterable Findings page
+- Download report PDF is enabled after a scan and returns a valid PDF report
 - patch generation is blocked until the user approves it, then Download patch returns a unified diff
 - history survives refresh through Anna storage
 - dry-run PR generation works without a token

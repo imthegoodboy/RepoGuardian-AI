@@ -33,6 +33,8 @@ const state = {
   currentScan: null,
   patch: null,
   patchUrl: null,
+  reportUrl: null,
+  reportScanKey: "",
   settings: {
     aiDefault: true,
     networkDefault: true,
@@ -199,6 +201,7 @@ function bindActions() {
   $("severity-filter").addEventListener("change", renderFindings);
   $("category-filter").addEventListener("change", renderFindings);
   $("ask-agent-btn").addEventListener("click", askAgent);
+  $("download-report-pdf-btn").addEventListener("click", downloadReportPdf);
   $("generate-patch-btn").addEventListener("click", generatePatch);
   $("download-patch-btn").addEventListener("click", downloadPatch);
   $("generate-pr-btn").addEventListener("click", generatePullRequest);
@@ -464,6 +467,7 @@ function renderAll() {
   renderFindings();
   renderHistory();
   renderPrDefaults();
+  updateReportPdfDownload();
 }
 
 function renderDashboard() {
@@ -677,6 +681,279 @@ function downloadPatch(event) {
   $("patch-status").textContent = `Download ready: ${state.patch.filename || "repoguardian-fixes.patch"}`;
 }
 
+function updateReportPdfDownload() {
+  const link = $("download-report-pdf-btn");
+  if (!link) return;
+  const scan = state.currentScan;
+  if (!scan) {
+    resetReportPdfDownload();
+    return;
+  }
+  const key = [
+    scan.scan_id || "scan",
+    scan.created_at || "",
+    scan.summary?.risk_score ?? "",
+    (scan.findings || []).length,
+    scan.risk_analysis?.mode || "",
+  ].join(":");
+  if (state.reportUrl && state.reportScanKey === key) {
+    enableReportPdfLink(link, scan);
+    return;
+  }
+  resetReportPdfDownload();
+  const pdfBytes = buildScanReportPdf(scan);
+  const blob = new Blob([pdfBytes], { type: "application/pdf" });
+  state.reportUrl = URL.createObjectURL(blob);
+  state.reportScanKey = key;
+  enableReportPdfLink(link, scan);
+}
+
+function enableReportPdfLink(link, scan) {
+  link.href = state.reportUrl || "#";
+  link.download = `repoguardian-report-${safeFilename(scan.scan_id || "scan")}.pdf`;
+  link.rel = "noopener";
+  link.classList.remove("is-disabled");
+  link.setAttribute("aria-disabled", "false");
+}
+
+function resetReportPdfDownload() {
+  if (state.reportUrl) {
+    URL.revokeObjectURL(state.reportUrl);
+    state.reportUrl = null;
+  }
+  state.reportScanKey = "";
+  const link = $("download-report-pdf-btn");
+  if (!link) return;
+  link.href = "#";
+  link.removeAttribute("download");
+  link.classList.add("is-disabled");
+  link.setAttribute("aria-disabled", "true");
+}
+
+function downloadReportPdf(event) {
+  if (!state.currentScan || !state.reportUrl) {
+    event.preventDefault();
+    return;
+  }
+}
+
+function buildScanReportPdf(scan) {
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const margin = 48;
+  const bottom = 58;
+  const pages = [];
+  let ops = [];
+  let y = pageHeight - margin;
+
+  const newPage = () => {
+    if (ops.length) pages.push(ops.join(""));
+    ops = [];
+    y = pageHeight - margin;
+  };
+
+  const ensureSpace = (height) => {
+    if (y - height < bottom) newPage();
+  };
+
+  const drawText = (text, x, lineY, size, font, color = [0.09, 0.13, 0.19]) => {
+    const clean = cleanPdfText(text);
+    ops.push(
+      `${color[0]} ${color[1]} ${color[2]} rg\nBT\n/${font} ${size} Tf\n1 0 0 1 ${x.toFixed(2)} ${lineY.toFixed(2)} Tm\n(${escapePdfText(clean)}) Tj\nET\n`,
+    );
+  };
+
+  const drawRule = () => {
+    ensureSpace(12);
+    ops.push(`0.82 0.86 0.91 RG\n0.75 w\n${margin} ${y.toFixed(2)} m ${pageWidth - margin} ${y.toFixed(2)} l S\n`);
+    y -= 16;
+  };
+
+  const addText = (text, options = {}) => {
+    const size = options.size || 10;
+    const lineHeight = options.lineHeight || Math.ceil(size * 1.45);
+    const indent = options.indent || 0;
+    const maxWidth = pageWidth - margin * 2 - indent;
+    const maxChars = options.maxChars || Math.max(24, Math.floor(maxWidth / (size * 0.52)));
+    const lines = wrapPdfText(text, maxChars);
+    for (const line of lines) {
+      ensureSpace(lineHeight);
+      drawText(line, margin + indent, y, size, options.font || "F1", options.color);
+      y -= lineHeight;
+    }
+    y -= options.after ?? 2;
+  };
+
+  const addHeading = (text, size = 13) => {
+    ensureSpace(28);
+    y -= 6;
+    addText(text, { size, font: "F2", lineHeight: Math.ceil(size * 1.35), after: 6 });
+  };
+
+  const addBullet = (text) => addText(`- ${text}`, { indent: 14, size: 9.5, lineHeight: 14, after: 1 });
+
+  const summary = scan.summary || {};
+  const counts = summary.counts || {};
+  const risk = scan.risk_analysis || {};
+  const findings = scan.findings || [];
+  const warnings = scan.warnings || [];
+  const created = scan.created_at ? new Date(scan.created_at).toLocaleString() : new Date().toLocaleString();
+  const source = readableSource(scan.source);
+  const secrets = findings.filter((finding) => finding.category === "secret").length;
+
+  addText("RepoGuardian AI Security Report", { size: 18, font: "F2", lineHeight: 24, after: 2 });
+  addText(`Source: ${source}`, { size: 10, font: "F2", lineHeight: 14, after: 0 });
+  addText(`Scan ID: ${scan.scan_id || "n/a"} | Created: ${created}`, { size: 9, color: [0.4, 0.44, 0.5], lineHeight: 13, after: 6 });
+  drawRule();
+
+  addHeading("Executive Summary");
+  addText(risk.executive_summary || "No executive summary was returned for this scan.", { size: 10, lineHeight: 15 });
+
+  addHeading("Risk Snapshot");
+  [
+    `Risk score: ${summary.risk_score ?? 0}/100`,
+    `Grade: ${summary.grade || "n/a"}`,
+    `Total findings: ${summary.finding_count ?? findings.length}`,
+    `Critical: ${counts.critical || 0} | High: ${counts.high || 0} | Medium: ${counts.medium || 0} | Low: ${counts.low || 0}`,
+    `Secrets detected: ${secrets}`,
+    `Risk mode: ${risk.mode || "deterministic"}`,
+    `Release blocker: ${risk.release_blocker ? "yes" : "no"}${risk.release_blocker_reason ? ` - ${risk.release_blocker_reason}` : ""}`,
+  ].forEach(addBullet);
+
+  addHeading("Priority Actions");
+  const actions = (risk.priority_actions || []).slice(0, 8);
+  if (actions.length) actions.forEach(addBullet);
+  else addBullet("Review the top findings and validate each fix with project tests.");
+
+  addHeading("Top Findings");
+  if (!findings.length) {
+    addBullet("No findings were returned by the scanner.");
+  } else {
+    sortedFindings(findings)
+      .slice(0, 30)
+      .forEach((finding, index) => {
+        const location = finding.file ? `${finding.file}${finding.line ? `:${finding.line}` : ""}` : "Repository level";
+        ensureSpace(54);
+        addText(`${index + 1}. ${String(finding.severity || "info").toUpperCase()} - ${finding.title || "Untitled finding"}`, {
+          size: 10,
+          font: "F2",
+          lineHeight: 14,
+          after: 0,
+        });
+        addText(`Category: ${finding.category || "n/a"} | Location: ${location}`, { size: 8.8, color: [0.4, 0.44, 0.5], lineHeight: 12, after: 0 });
+        if (finding.impact) addText(`Impact: ${finding.impact}`, { size: 9, lineHeight: 13, after: 0 });
+        if (finding.recommendation) addText(`Fix: ${finding.recommendation}`, { size: 9, lineHeight: 13, after: 4 });
+      });
+  }
+
+  if (warnings.length) {
+    addHeading("Warnings");
+    warnings.slice(0, 10).forEach(addBullet);
+  }
+
+  addHeading("Validation Notes");
+  (risk.validation_plan || ["Run the project test suite after applying fixes.", "Re-run RepoGuardian AI to confirm release blockers are closed."])
+    .slice(0, 6)
+    .forEach(addBullet);
+  addText("Generated by RepoGuardian AI. Secret evidence is redacted by the scanner before display or export.", {
+    size: 8.5,
+    color: [0.4, 0.44, 0.5],
+    lineHeight: 12,
+    after: 0,
+  });
+
+  if (ops.length) pages.push(ops.join(""));
+  return encodePdf(pages, { pageWidth, pageHeight, margin });
+}
+
+function sortedFindings(findings) {
+  const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  return [...findings].sort((a, b) => {
+    const severityDelta = (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9);
+    if (severityDelta) return severityDelta;
+    return String(a.title || "").localeCompare(String(b.title || ""));
+  });
+}
+
+function encodePdf(pageContents, { pageWidth, pageHeight, margin }) {
+  const pages = pageContents.length ? pageContents : [""];
+  const objects = {};
+  const pageRefs = pages.map((_, index) => `${3 + index * 2} 0 R`).join(" ");
+  objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2] = `<< /Type /Pages /Kids [${pageRefs}] /Count ${pages.length} >>`;
+
+  pages.forEach((content, index) => {
+    const pageObject = 3 + index * 2;
+    const contentObject = pageObject + 1;
+    const footer = [
+      `0.4 0.44 0.5 rg\nBT\n/F1 8 Tf\n1 0 0 1 ${margin.toFixed(2)} 34 Tm\n(RepoGuardian AI) Tj\nET\n`,
+      `0.4 0.44 0.5 rg\nBT\n/F1 8 Tf\n1 0 0 1 ${(pageWidth - margin - 48).toFixed(2)} 34 Tm\n(Page ${index + 1} of ${pages.length}) Tj\nET\n`,
+    ].join("");
+    const stream = `${content}${footer}`;
+    objects[pageObject] = [
+      "<< /Type /Page",
+      "/Parent 2 0 R",
+      `/MediaBox [0 0 ${pageWidth} ${pageHeight}]`,
+      "/Resources << /Font <<",
+      "/F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+      "/F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+      ">> >>",
+      `/Contents ${contentObject} 0 R >>`,
+    ].join(" ");
+    objects[contentObject] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  });
+
+  const maxObject = Math.max(...Object.keys(objects).map(Number));
+  const offsets = [0];
+  let pdf = "%PDF-1.4\n% RepoGuardian AI\n";
+  for (let objectId = 1; objectId <= maxObject; objectId += 1) {
+    offsets[objectId] = pdf.length;
+    pdf += `${objectId} 0 obj\n${objects[objectId]}\nendobj\n`;
+  }
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${maxObject + 1}\n0000000000 65535 f \n`;
+  for (let objectId = 1; objectId <= maxObject; objectId += 1) {
+    pdf += `${String(offsets[objectId]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${maxObject + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return new TextEncoder().encode(pdf);
+}
+
+function wrapPdfText(value, maxChars) {
+  const normalized = cleanPdfText(value).replace(/\s+/g, " ").trim();
+  if (!normalized) return [""];
+  const lines = [];
+  let line = "";
+  for (const word of normalized.split(" ")) {
+    if (word.length > maxChars) {
+      if (line) {
+        lines.push(line);
+        line = "";
+      }
+      for (let i = 0; i < word.length; i += maxChars) lines.push(word.slice(i, i + maxChars));
+    } else if (!line) {
+      line = word;
+    } else if (`${line} ${word}`.length <= maxChars) {
+      line = `${line} ${word}`;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function cleanPdfText(value) {
+  return String(value ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[^\x20-\x7E]/g, "?");
+}
+
+function escapePdfText(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
 function renderPrDefaults() {
   const scan = state.currentScan;
   if (!scan) return;
@@ -766,6 +1043,14 @@ function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function safeFilename(value) {
+  return String(value || "scan")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "scan";
 }
 
 function textToBase64(text) {

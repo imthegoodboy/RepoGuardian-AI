@@ -14,7 +14,7 @@ Current shipped state:
 
 - Anna App: `RepoGuardian AI`
 - App directory: [`examples/anna-app-repoguardian-ai`](examples/anna-app-repoguardian-ai)
-- App version prepared for Anna testing: `0.1.9`
+- App version prepared for Anna testing: `0.1.10`
 - Bundled scanner tool: `repoguardian-scanner`
 - Scanner tool id: `tool-nikku696969-repoguardian-scanner-3tsnh6fp`
 - Scanner binary release: `repoguardian-scanner-v0.1.3`
@@ -35,6 +35,7 @@ RepoGuardian AI runs an end-to-end repository security workflow:
 - asks Anna-hosted LLM/sampling for compact risk synthesis when the user grant is available
 - falls back to deterministic risk analysis when sampling is not granted
 - stores scan history through Anna App storage
+- downloads a browser-generated PDF report for the current scan
 - generates a downloadable patch only after explicit user approval
 - prepares dry-run pull request plans without a token
 - creates a real GitHub pull request only after explicit approval and a runtime GitHub token
@@ -55,9 +56,10 @@ Basic user flow:
 5. Keep **AI synthesis** enabled when Anna grants host sampling. If it is unavailable, the app still returns deterministic findings.
 6. Run the scan and review the dashboard, release gate, dependency risks, secret findings, code risks, and architecture/performance notes.
 7. Use filters to focus on critical, high, medium, dependency, secret, code, architecture, or performance findings.
-8. Open the agent-style guidance panel to ask for a concise explanation of the scan result.
-9. Generate a patch only after approving the proposed fix plan.
-10. Download the patch or create a pull request. Pull request creation requires explicit approval and a GitHub token at runtime.
+8. Download the PDF report from the top bar when you need a portable scan summary.
+9. Open the agent-style guidance panel to ask for a concise explanation of the scan result.
+10. Generate a patch only after approving the proposed fix plan.
+11. Download the patch or create a pull request. Pull request creation requires explicit approval and a GitHub token at runtime.
 
 For local development, start it with:
 

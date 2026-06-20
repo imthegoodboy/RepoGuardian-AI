@@ -98,6 +98,21 @@ test("review-ready security workflow runs end to end through Anna harness", asyn
   await expect(frame.locator("#metric-secrets")).toContainText("1");
   await expect(frame.locator("#workflow-list")).toContainText("Generate and download patch");
   await expect(frame.locator("#recent-findings")).toContainText(/secret|SQL|XSS|architecture|performance/i);
+  await expect(frame.locator("#download-report-pdf-btn")).toHaveAttribute("aria-disabled", "false");
+  const reportName = await frame.locator("#download-report-pdf-btn").getAttribute("download");
+  expect(reportName).toMatch(/^repoguardian-report-.+\.pdf$/);
+  const reportPdf = await frame.locator("#download-report-pdf-btn").evaluate(async (link) => {
+    const response = await fetch(link.href);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const prefix = Array.from(bytes.slice(0, 5)).map((byte) => String.fromCharCode(byte)).join("");
+    const text = new TextDecoder().decode(bytes.slice(0, 3000));
+    return { prefix, size: bytes.byteLength, text, bytes: Array.from(bytes) };
+  });
+  expect(reportPdf.prefix).toBe("%PDF-");
+  expect(reportPdf.size).toBeGreaterThan(1200);
+  expect(reportPdf.text).toContain("RepoGuardian AI Security Report");
+  expect(reportPdf.text).toContain("Top Findings");
+  fs.writeFileSync(testInfo.outputPath(reportName), Buffer.from(reportPdf.bytes));
 
   await frame.getByRole("button", { name: /Findings/i }).click();
   await expectCategoryVisible(frame, "secret");
