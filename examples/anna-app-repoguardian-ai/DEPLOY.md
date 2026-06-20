@@ -3,7 +3,7 @@
 Use production Anna unless intentionally testing staging.
 
 ```powershell
-$HOST = "https://anna.partners"
+$ANNA_HOST = "https://anna.partners"
 cd examples\anna-app-repoguardian-ai
 
 npm test
@@ -11,16 +11,16 @@ npm run fixture:verify
 anna-app validate --strict
 npm run test:e2e
 
-anna-app apps push --account $HOST --json
-anna-app apps cut 0.1.10 --account $HOST --json
-anna-app apps submit-review repoguardian-ai --account $HOST --json
-anna-app apps status repoguardian-ai --account $HOST --json
+anna-app apps push --account $ANNA_HOST --json
+anna-app apps cut 0.1.10 --account $ANNA_HOST --json
+anna-app apps submit-review repoguardian-ai --account $ANNA_HOST --json
+anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 ```
 
 After review approval:
 
 ```powershell
-anna-app apps release 0.1.10 --account $HOST --json
+anna-app apps release 0.1.10 --account $ANNA_HOST --json
 ```
 
 Before review, verify:
