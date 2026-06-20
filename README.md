@@ -4,6 +4,165 @@
 
 This repository provides **complete examples and development documentation** for Anna Executa plugins, covering Python, Node.js, and Go, with both Local and Binary distribution methods.
 
+## What We Built: RepoGuardian AI
+
+The main project in this workspace is **RepoGuardian AI**, a review-ready Anna App that works like a compact security engineering agent for repositories.
+
+RepoGuardian AI can scan a GitHub repository or uploaded archive, detect risky code and dependencies, summarize release blockers, generate approval-gated patch files, and prepare pull request plans. It is designed to run through Anna with a bundled Executa scanner, so users do **not** need to bring an OpenAI API key or any model-provider key.
+
+Current shipped state:
+
+- Anna App: `RepoGuardian AI`
+- App directory: [`examples/anna-app-repoguardian-ai`](examples/anna-app-repoguardian-ai)
+- App version prepared for Anna testing: `0.1.9`
+- Bundled scanner tool: `repoguardian-scanner`
+- Scanner tool id: `tool-nikku696969-repoguardian-scanner-3tsnh6fp`
+- Scanner binary release: `repoguardian-scanner-v0.1.3`
+- Supported binary platforms: `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `windows-x86_64`
+
+### What The App Does
+
+RepoGuardian AI runs an end-to-end repository security workflow:
+
+- clones a public or token-authenticated GitHub repository
+- scans uploaded `.zip`, `.tar`, `.tar.gz`, and `.tgz` repository archives
+- detects committed secrets and redacts evidence before displaying it
+- parses npm, PyPI, and Go dependency manifests
+- checks OSV and package registries when network dependency checks are enabled
+- flags static code risks, including unsafe command execution, `eval`, unsafe YAML, pickle, weak hashes, and broad CORS
+- flags SQL injection, XSS, bad architecture, and performance risks
+- ranks findings by release risk and fix priority
+- asks Anna-hosted LLM/sampling for compact risk synthesis when the user grant is available
+- falls back to deterministic risk analysis when sampling is not granted
+- stores scan history through Anna App storage
+- generates a downloadable patch only after explicit user approval
+- prepares dry-run pull request plans without a token
+- creates a real GitHub pull request only after explicit approval and a runtime GitHub token
+
+### How To Use RepoGuardian AI
+
+Use RepoGuardian AI from inside Anna or from the Anna local dev harness. The scanner depends on the Anna runtime because the UI calls the bundled Executa tool through `anna.tools.invoke`.
+
+Basic user flow:
+
+1. Open Anna and install/open **RepoGuardian AI**.
+2. Make sure a local Matrix Agent / Anna Agent is online if you are testing installed Executa binaries.
+3. Start a new scan.
+4. Choose a source:
+   - paste a GitHub repository URL for a public repository
+   - add a GitHub token only when scanning a private repository or creating a real pull request
+   - upload a repository archive when you want to scan local code without pushing it to GitHub
+5. Keep **AI synthesis** enabled when Anna grants host sampling. If it is unavailable, the app still returns deterministic findings.
+6. Run the scan and review the dashboard, release gate, dependency risks, secret findings, code risks, and architecture/performance notes.
+7. Use filters to focus on critical, high, medium, dependency, secret, code, architecture, or performance findings.
+8. Open the agent-style guidance panel to ask for a concise explanation of the scan result.
+9. Generate a patch only after approving the proposed fix plan.
+10. Download the patch or create a pull request. Pull request creation requires explicit approval and a GitHub token at runtime.
+
+For local development, start it with:
+
+```powershell
+cd examples\anna-app-repoguardian-ai
+anna-app dev --port 5184 --no-llm
+```
+
+Then open `http://localhost:5184/`. For Anna-hosted LLM synthesis, use:
+
+```powershell
+anna-app dev --port 5184 --llm-account https://anna.partners
+```
+
+### How It Works
+
+RepoGuardian AI has two parts:
+
+1. **Anna App UI** in [`examples/anna-app-repoguardian-ai/bundle`](examples/anna-app-repoguardian-ai/bundle)
+
+   This is the browser UI users interact with inside Anna. It handles scan setup, finding filters, dashboard metrics, history, patch download, pull request flow, and agent-style Q&A.
+
+2. **Bundled Executa scanner** in [`examples/anna-app-repoguardian-ai/executas/repoguardian-scanner`](examples/anna-app-repoguardian-ai/executas/repoguardian-scanner)
+
+   This is a Python Executa Tool that speaks JSON-RPC over stdio. Anna starts it through the local Matrix Agent or the dev harness, then the UI calls it through `anna.tools.invoke`.
+
+The high-level flow is:
+
+```text
+User in Anna
+  -> RepoGuardian AI UI
+  -> anna.tools.invoke(...)
+  -> Local Anna / Matrix Agent
+  -> repoguardian-scanner Executa
+  -> scan result, risk summary, patch or PR plan
+  -> UI renders findings and next actions
+```
+
+The app intentionally keeps LLM context compact. It sends only scan summary data, top findings, and prioritized suggestions to Anna-hosted synthesis, not an entire repository dump.
+
+### App Directory Guide
+
+```text
+examples/anna-app-repoguardian-ai/
+├── app.json                         # Store metadata and app version
+├── manifest.json                    # Anna App permissions, UI host APIs, bundled Executa refs
+├── package.json                     # Test/dev scripts for the Anna App
+├── DEPLOY.md                        # Push, cut, review, and release checklist
+├── README.md                        # App-specific documentation
+├── bundle/
+│   ├── index.html                   # Main Anna App view
+│   ├── app.js                       # UI logic, Anna runtime calls, scan/patch/PR flows
+│   ├── style.css                    # App styling
+│   └── anna-tool-ids.js             # Generated by Anna publish/push flow
+├── executas/
+│   └── repoguardian-scanner/
+│       ├── executa.json             # Tool metadata and binary distribution URLs
+│       ├── repoguardian_scanner.py  # Scanner implementation
+│       ├── package_binary.py        # PyInstaller packaging + smoke test
+│       ├── pyproject.toml           # Python project and tool entrypoint
+│       └── uv.lock                  # Locked Python dependency state
+├── fixtures/                        # Anna fixture recordings
+└── tests/
+    ├── bundle/                      # Manifest and UI contract tests
+    ├── plugin/                      # Scanner contract/unit tests
+    └── e2e/                         # Browser-level Anna harness workflow test
+```
+
+### Run RepoGuardian AI Locally
+
+```powershell
+cd examples\anna-app-repoguardian-ai
+npm install
+npm test
+npm run fixture:verify
+anna-app validate --strict
+anna-app dev --port 5184 --no-llm
+```
+
+Open `http://localhost:5184/` after the dev server starts.
+
+Run the browser-level workflow test against the dev harness:
+
+```powershell
+npm run test:e2e
+```
+
+For Anna-hosted risk synthesis during local development:
+
+```powershell
+anna-app dev --port 5184 --llm-account https://anna.partners
+```
+
+No external API key is required. Anna owns the LLM/sampling path and the app gracefully falls back to deterministic risk analysis if the sampling grant is not available.
+
+### Important Runtime Note
+
+If you see this message:
+
+```text
+Anna runtime is not connected. Start with `anna-app dev` to run scans.
+```
+
+it means the UI is running as a standalone web page instead of inside the Anna runtime or the `anna-app dev` harness. Start it with `anna-app dev`, or open/install the app through Anna so `window.anna` and `anna.tools.invoke` are available.
+
 ## What is Executa?
 
 Executa is the plugin extension system for Anna Agent. Developers can write tools in **any programming language** — as long as they implement the standard **JSON-RPC 2.0 over stdio** protocol, Anna will automatically discover, load, and expose them to the LLM.
@@ -35,11 +194,13 @@ anna-executa-examples/
 │   │   └── Makefile
 │   ├── multifile-binary/                # Multi-file Binary distribution examples
 │   │   └── python-pyinstaller-onedir/   # PyInstaller --onedir + manifest.json
-│   └── anna-app-focus-flow/             # ⭐ Complete Anna App — UI bundle + skill + tool plugin
+│   ├── anna-app-focus-flow/             # ⭐ Complete Anna App — UI bundle + skill + tool plugin
 │                                        #     The tool plugin ships in three flavours:
 │                                        #     focus-session-{python,node,go}; pick one via
 │                                        #     `executa.json` or `--executa` CLI flag.
-│   └── anna-app-visual-brand/           # ⭐ Anna App — host LLM image generate/edit + APS persistence
+│   ├── anna-app-visual-brand/           # ⭐ Anna App — host LLM image generate/edit + APS persistence
+│   └── anna-app-repoguardian-ai/         # ⭐ RepoGuardian AI — repository security scanner app
+│                                        #     UI + bundled Python Executa + binary release workflow
 ├── sdk/                                 # Reference SDKs used by the sampling examples
 │   ├── python/                          # executa_sdk
 │   ├── nodejs/                          # @anna/executa-sdk
@@ -210,6 +371,7 @@ python examples/python/storage-notebook/storage_notebook.py
 - [Reverse Sampling](https://anna.partners/developers/reference/executa-sampling) — Plugins requesting LLM completions from the host
 - [Persistent Storage](https://anna.partners/developers/reference/executa-persistent-storage) — Per-user / per-app KV + object storage hosted by Anna
 - [Common Pitfalls](https://anna.partners/developers/reference/executa-pitfalls) — Read this first when a plugin shows as "Stopped"
+- [Anna App Example — RepoGuardian AI](examples/anna-app-repoguardian-ai/README.md) — Review-ready repository security scanner with bundled Executa, binary distribution, patch generation, and PR planning
 - [Anna App Example — Focus Flow](examples/anna-app-focus-flow/README.md) — End-to-end Anna App: 1 tool + 1 skill + premium UI bundle + full app manifest
 
 ## License
