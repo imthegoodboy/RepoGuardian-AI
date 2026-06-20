@@ -57,7 +57,7 @@ TOOL_ID = "tool-nikku696969-repoguardian-scanner-3tsnh6fp"
 MANIFEST = {
     "name": TOOL_ID,
     "display_name": "RepoGuardian Scanner",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "description": (
         "Repository security scanner for RepoGuardian AI. Clones GitHub repos "
         "or unpacks uploaded archives, detects dependency vulnerabilities, "
@@ -167,8 +167,19 @@ MANIFEST = {
                 "after explicit approval and a runtime GitHub token."
             ),
             "parameters": [
-                {"name": "repository_url", "type": "string", "required": True},
-                {"name": "base_branch", "type": "string", "required": False, "default": ""},
+                {
+                    "name": "repository_url",
+                    "type": "string",
+                    "description": "GitHub URL or owner/repo where the report branch or pull request will be prepared.",
+                    "required": True,
+                },
+                {
+                    "name": "base_branch",
+                    "type": "string",
+                    "description": "Optional target branch. Defaults to the repository default branch.",
+                    "required": False,
+                    "default": "",
+                },
                 {
                     "name": "github_token",
                     "type": "string",
@@ -182,10 +193,34 @@ MANIFEST = {
                     "description": "Result returned by scan_repository.",
                     "required": True,
                 },
-                {"name": "dry_run", "type": "boolean", "required": False, "default": True},
-                {"name": "approved", "type": "boolean", "required": False, "default": False},
-                {"name": "title", "type": "string", "required": False, "default": ""},
-                {"name": "body", "type": "string", "required": False, "default": ""},
+                {
+                    "name": "dry_run",
+                    "type": "boolean",
+                    "description": "When true, return the PR plan and file list without writing to GitHub.",
+                    "required": False,
+                    "default": True,
+                },
+                {
+                    "name": "approved",
+                    "type": "boolean",
+                    "description": "Must be true before creating a real pull request.",
+                    "required": False,
+                    "default": False,
+                },
+                {
+                    "name": "title",
+                    "type": "string",
+                    "description": "Optional pull request title. Defaults to a generated RepoGuardian report title.",
+                    "required": False,
+                    "default": "",
+                },
+                {
+                    "name": "body",
+                    "type": "string",
+                    "description": "Optional pull request body. Defaults to the generated RepoGuardian report.",
+                    "required": False,
+                    "default": "",
+                },
             ],
         },
         {
@@ -202,7 +237,12 @@ MANIFEST = {
                     "description": "Result returned by scan_repository.",
                     "required": True,
                 },
-                {"name": "approved", "type": "boolean", "required": True},
+                {
+                    "name": "approved",
+                    "type": "boolean",
+                    "description": "Must be true before generating the downloadable patch artifact.",
+                    "required": True,
+                },
             ],
         },
     ],
@@ -1443,15 +1483,22 @@ async def ai_risk(summary: dict[str, Any], findings: list[dict[str, Any]], sourc
     }
     prompt = (
         "You are RepoGuardian AI, an autonomous application security engineer. "
-        "Summarize the repository risk for an engineering lead. Return strict JSON "
-        "with keys posture, executive_summary, priority_actions (array), "
-        "business_risk, and limitations. Do not invent findings.\n\n"
+        "Summarize repository risk for an engineering lead using only the scan evidence. "
+        "Prioritize release blockers first: secrets, critical/high dependency CVEs, "
+        "SQL injection, XSS, unsafe command execution, auth/data-access flaws, and severe "
+        "architecture or performance risks. Return strict JSON with keys posture, "
+        "executive_summary, priority_actions (array), business_risk, release_blocker "
+        "(boolean), validation_plan (array), confidence, and limitations. Do not invent "
+        "findings or claim a fix was applied.\n\n"
         + json.dumps(payload, ensure_ascii=False)
     )
     result = await sampling.create_message(
         messages=[{"role": "user", "content": {"type": "text", "text": prompt}}],
-        max_tokens=900,
-        system_prompt="Be concise, security-specific, and evidence-bound.",
+        max_tokens=1200,
+        system_prompt=(
+            "You are a senior application security reviewer. Be concise, "
+            "evidence-bound, and practical. Separate confirmed findings from assumptions."
+        ),
         response_format={"type": "json_object"},
         on_unsupported="text",
         timeout=65.0,

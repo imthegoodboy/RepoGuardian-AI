@@ -98,7 +98,12 @@ def build_binary(tool_id: str) -> Path:
     return exe
 
 
-def write_manifest(stage: Path, metadata: dict[str, str], entrypoint: str) -> None:
+def write_manifest(
+    stage: Path,
+    metadata: dict[str, str],
+    entrypoints: dict[str, str],
+    permissions: dict[str, str],
+) -> None:
     manifest = {
         "name": metadata["tool_id"],
         "display_name": metadata["display_name"],
@@ -106,8 +111,8 @@ def write_manifest(stage: Path, metadata: dict[str, str], entrypoint: str) -> No
         "description": metadata["description"],
         "runtime": {
             "binary": {
-                "entrypoint": {"default": entrypoint},
-                "permissions": {entrypoint: "0o755"},
+                "entrypoint": entrypoints,
+                "permissions": permissions,
             }
         },
     }
@@ -119,12 +124,25 @@ def stage_binary(binary: Path, platform_name: str, metadata: dict[str, str]) -> 
     bin_dir = stage / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
 
-    suffix = ".exe" if platform_name.startswith("windows-") else ""
-    entrypoint = f"bin/{metadata['tool_id']}{suffix}"
+    tool_id = metadata["tool_id"]
+    entrypoint = f"bin/{tool_id}"
+    entrypoints = {"default": entrypoint}
+    permissions = {entrypoint: "0o755"}
+
     staged_binary = stage / entrypoint
     shutil.copy2(binary, staged_binary)
     staged_binary.chmod(staged_binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    write_manifest(stage, metadata, entrypoint)
+
+    if platform_name.startswith("windows-"):
+        exe_entrypoint = f"{entrypoint}.exe"
+        exe_binary = stage / exe_entrypoint
+        shutil.copy2(binary, exe_binary)
+        exe_binary.chmod(exe_binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        entrypoints["windows-x86_64"] = entrypoint
+        entrypoints["windows-arm64"] = entrypoint
+        permissions[exe_entrypoint] = "0o755"
+
+    write_manifest(stage, metadata, entrypoints, permissions)
     return stage, entrypoint
 
 
@@ -152,6 +170,42 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def validate_manifest_shape(result: dict[str, object]) -> None:
+    failures: list[str] = []
+    for key in ("name", "display_name", "version", "description"):
+        if not result.get(key):
+            failures.append(f"manifest.{key} is required")
+
+    tools = result.get("tools")
+    if not isinstance(tools, list) or not tools:
+        failures.append("manifest.tools must be a non-empty list")
+    else:
+        for tool in tools:
+            if not isinstance(tool, dict):
+                failures.append("manifest.tools[] entries must be objects")
+                continue
+            tool_name = str(tool.get("name") or "<unnamed>")
+            if not tool.get("name"):
+                failures.append("tool.name is required")
+            if not tool.get("description"):
+                failures.append(f"{tool_name}.description is required")
+            parameters = tool.get("parameters") or []
+            if not isinstance(parameters, list):
+                failures.append(f"{tool_name}.parameters must be a list")
+                continue
+            for parameter in parameters:
+                if not isinstance(parameter, dict):
+                    failures.append(f"{tool_name}.parameters[] entries must be objects")
+                    continue
+                param_name = str(parameter.get("name") or "<unnamed>")
+                for key in ("name", "type", "description"):
+                    if not parameter.get(key):
+                        failures.append(f"{tool_name}.{param_name}.{key} is required")
+
+    if failures:
+        raise SystemExit("smoke test failed manifest validation:\n- " + "\n- ".join(failures))
 
 
 def smoke_test(executable: Path) -> None:
@@ -190,6 +244,7 @@ def smoke_test(executable: Path) -> None:
     result = response.get("result") or {}
     if response.get("error") or not result.get("tools"):
         raise SystemExit(f"smoke test failed: {raw}")
+    validate_manifest_shape(result)
     print("Smoke test passed:", result.get("name") or result.get("display_name"))
 
 

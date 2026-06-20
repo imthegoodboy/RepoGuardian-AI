@@ -2,6 +2,7 @@
   "schema": 2,
   "permissions": [
     "tools.invoke",
+    "llm.complete",
     "storage.read",
     "storage.write",
     "chat.append_artifact"
@@ -9,12 +10,12 @@
   "required_executas": [
     {
       "tool_id": "bundled:repoguardian-scanner",
-      "min_version": "0.1.2",
+      "min_version": "0.1.3",
       "version": "latest"
     }
   ],
   "optional_executas": [],
-  "system_prompt_addendum": "The user has RepoGuardian AI open. Treat the repoguardian-scanner Executa as the source of truth for repository security scans. Use scan_repository for clone/unpack, dependency scan, static analysis, secret detection, SQL injection, XSS, bad architecture, performance issues, risk analysis, and suggestions. Follow RepoGuardian's security-agent protocol: scan first, keep summaries compact, prioritize secrets and critical/high vulnerabilities, require user approval before generating fixes, and use create_pull_request only after the user explicitly approves PR creation and provides a runtime GitHub token or connected-account equivalent. Do not invent scan results; cite the app's returned findings and risk summary.",
+  "system_prompt_addendum": "The user has RepoGuardian AI open. Act as a senior application security reviewer for this app. Use the repoguardian-scanner Executa as the source of truth: scan_repository for clone/unpack, dependency analysis, static analysis, secret detection, SQL injection, XSS, architecture, performance, risk synthesis, and suggestions. Work evidence-first: scan before conclusions, cite returned findings by severity/title/location, and say when evidence is missing. Keep context compact by prioritizing secrets, critical/high vulnerabilities, exploitable injection/XSS, unsafe architecture, and blocking performance issues. Do not invent scan results or pretend fixes were applied. Require explicit user approval before generating a patch, creating a pull request, or using a runtime GitHub token. For recommendations, give an ordered fix plan plus validation commands/tests.",
   "user_message_prefix_template": "[RepoGuardian AI] {user_message}",
   "tags": [
     "security",
@@ -46,6 +47,9 @@
       }
     ],
     "host_api": {
+      "llm": [
+        "complete"
+      ],
       "tools": [
         "required:bundled:repoguardian-scanner"
       ],

@@ -14,6 +14,13 @@ const STORAGE_HISTORY = "repoguardian:history";
 const STORAGE_SETTINGS = "repoguardian:settings";
 const MAX_INLINE_ARCHIVE_BYTES = 6 * 1024 * 1024;
 const RPC_TIMEOUT_PADDING_MS = 10000;
+const SECURITY_AGENT_SYSTEM_PROMPT = [
+  "You are RepoGuardian AI's senior application security agent.",
+  "Use only the provided scan evidence. Do not invent files, vulnerabilities, exploitability, or fixes.",
+  "Prioritize release blockers first: exposed secrets, critical/high dependency CVEs, SQL injection, XSS, auth/data-access flaws, unsafe command execution, and severe architecture or performance risks.",
+  "Give an ordered fix plan with owner-ready steps and validation commands/tests. If evidence is incomplete, state the gap and the next scan or manual check needed.",
+  "Never claim a patch, pull request, or repository change exists unless the app returned it. Require explicit approval before patch or PR creation.",
+].join(" ");
 
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -76,6 +83,11 @@ function createStandaloneRuntime(connectError) {
         return { artifact_id: "standalone" };
       },
     },
+    llm: {
+      async complete() {
+        throw new Error("Anna LLM is not connected in standalone preview.");
+      },
+    },
     window: {
       async set_title() {},
     },
@@ -103,6 +115,51 @@ function hostSupportsAnnaRiskAnalysis() {
       scope.startsWith("llm.") ||
       scope.startsWith("sampling."),
   );
+}
+
+function canUseDirectAnnaLlm() {
+  return typeof state.anna?.llm?.complete === "function";
+}
+
+function compactFindingForAgent(finding) {
+  return {
+    id: finding.id,
+    severity: finding.severity,
+    category: finding.category,
+    title: finding.title,
+    file: finding.file,
+    line: finding.line,
+    impact: finding.impact,
+    recommendation: finding.recommendation,
+    package: finding.package,
+    current_version: finding.current_version,
+    fixed_version: finding.fixed_version,
+  };
+}
+
+function buildAgentScanContext(scan, question = "") {
+  const findings = scan.findings || [];
+  const severityOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  const topFindings = [...findings]
+    .sort((a, b) => (severityOrder[a.severity] ?? 9) - (severityOrder[b.severity] ?? 9))
+    .slice(0, 24)
+    .map(compactFindingForAgent);
+  return {
+    question,
+    source: scan.source,
+    summary: scan.summary,
+    risk_analysis: scan.risk_analysis,
+    top_findings: topFindings,
+    top_suggestions: (scan.suggestions || []).slice(0, 12).map((item) => ({
+      severity: item.severity,
+      title: item.title,
+      file: item.file,
+      action: item.action,
+      can_auto_apply: item.can_auto_apply,
+    })),
+    warnings: (scan.warnings || []).slice(0, 8),
+    context_policy: "This is a compact scan excerpt. Treat it as authoritative evidence, and state when more code inspection is needed.",
+  };
 }
 
 async function init() {
@@ -280,7 +337,11 @@ async function runScan(sourceType) {
         ? "Running clone, dependency, secret, static, and deterministic risk analysis..."
         : "Running clone, dependency, secret, static, and risk analysis...",
     );
-    const result = await invokeTool("scan_repository", args, 180000);
+    let result = await invokeTool("scan_repository", args, 180000);
+    if (requestedAi && result?.risk_analysis?.mode === "deterministic" && canUseDirectAnnaLlm()) {
+      setScanStatus("Anna sampling grant unavailable; running compact Anna LLM risk synthesis...");
+      result = await enhanceRiskWithDirectAnnaLlm(result);
+    }
     await persistScan(result);
     if (state.settings.appendArtifact) await appendScanArtifact(result);
     setScanStatus(`Scan complete: ${result.summary.finding_count} findings in ${result.duration_ms} ms.`);
@@ -291,6 +352,76 @@ async function runScan(sourceType) {
   } finally {
     setBusy(false);
     $("scan-github-token").value = "";
+  }
+}
+
+async function enhanceRiskWithDirectAnnaLlm(scan) {
+  const context = buildAgentScanContext(scan, "Produce risk synthesis for the current scan.");
+  const prompt = [
+    "Review this compact RepoGuardian scan and return strict JSON only.",
+    "Schema: {\"posture\":\"Low|Moderate|Elevated|High\",\"executive_summary\":\"one concise paragraph\",\"priority_actions\":[\"3-5 ordered actions\"],\"business_risk\":\"one sentence\",\"release_blocker\":true|false,\"release_blocker_reason\":\"short reason or empty\",\"validation_plan\":[\"2-4 tests or commands\"],\"confidence\":\"low|medium|high\"}.",
+    "Prioritize critical/high security findings, exploitable secrets, SQL injection, XSS, dependency CVEs, unsafe command execution, and safe remediation order.",
+    "Do not invent findings. Base every action on the compact scan evidence.",
+    JSON.stringify(context),
+  ].join("\n\n");
+
+  try {
+    const completion = await state.anna.llm.complete(
+      {
+        messages: [{ role: "user", content: prompt }],
+        maxTokens: 1200,
+        temperature: 0.2,
+        systemPrompt: SECURITY_AGENT_SYSTEM_PROMPT,
+      },
+      { timeoutMs: 75000 },
+    );
+    const text = completion?.content?.text || completion?.content || "";
+    const parsed = parseJsonObject(text);
+    if (!parsed) return scan;
+    return {
+      ...scan,
+      risk_analysis: {
+        ...(scan.risk_analysis || {}),
+        mode: "anna-llm",
+        executive_summary: String(parsed.executive_summary || scan.risk_analysis?.executive_summary || ""),
+        priority_actions: Array.isArray(parsed.priority_actions)
+          ? parsed.priority_actions.slice(0, 5).map(String)
+          : scan.risk_analysis?.priority_actions || [],
+        business_risk: String(parsed.business_risk || scan.risk_analysis?.business_risk || ""),
+        release_blocker: Boolean(parsed.release_blocker),
+        release_blocker_reason: String(parsed.release_blocker_reason || ""),
+        validation_plan: Array.isArray(parsed.validation_plan) ? parsed.validation_plan.slice(0, 4).map(String) : [],
+        confidence: String(parsed.confidence || "medium"),
+        llm_model: completion?.model || "anna-host",
+        fallback_from: scan.risk_analysis?.mode || "deterministic",
+      },
+    };
+  } catch (err) {
+    return {
+      ...scan,
+      risk_analysis: {
+        ...(scan.risk_analysis || {}),
+        mode: scan.risk_analysis?.mode || "deterministic",
+        llm_error: formatError(err),
+      },
+    };
+  }
+}
+
+function parseJsonObject(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -438,18 +569,18 @@ async function askAgent() {
     if (!state.agentSession) {
       state.agentSession = await state.anna.agent.session({
         submode: "auto",
-        system_prompt: "You are RepoGuardian AI's security triage subagent. Use only the provided scan evidence.",
+        system_prompt: SECURITY_AGENT_SYSTEM_PROMPT,
       });
     }
     const question = $("agent-question").value.trim() || "Explain the top release blocker and the safest fix path.";
-    const context = {
-      summary: scan.summary,
-      source: scan.source,
-      top_findings: (scan.findings || []).slice(0, 12),
-      question,
-    };
+    const context = buildAgentScanContext(scan, question);
     const stream = state.agentSession.run({
-      content: `Use this RepoGuardian scan JSON to answer concisely:\n${JSON.stringify(context)}`,
+      content: [
+        "Answer the user's security question from this RepoGuardian scan evidence.",
+        "Format: Verdict, Evidence, Fix plan, Validation, Residual risk. Keep it concise and actionable.",
+        "If the user asks for code changes, say approval is required before patch/PR generation.",
+        JSON.stringify(context),
+      ].join("\n\n"),
     });
     $("agent-output").textContent = "";
     for await (const frame of stream) {

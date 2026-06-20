@@ -9,8 +9,9 @@ describe("repoguardian-ai manifest and bundle", () => {
   it("declares only the host APIs used by the bundle", () => {
     expect(manifest.schema).toBe(2);
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(["tools.invoke", "storage.read", "storage.write", "chat.append_artifact"]),
+      expect.arrayContaining(["tools.invoke", "llm.complete", "storage.read", "storage.write", "chat.append_artifact"]),
     );
+    expect(manifest.ui.host_api.llm).toEqual(["complete"]);
     expect(manifest.ui.host_api.tools).toEqual(["required:bundled:repoguardian-scanner"]);
     expect(manifest.ui.host_api.storage).toEqual(expect.arrayContaining(["get", "set", "delete", "list"]));
     expect(manifest.ui.host_api.chat).toEqual(["append_artifact"]);
@@ -36,6 +37,8 @@ describe("repoguardian-ai manifest and bundle", () => {
   it("guards Anna risk sampling behind host capabilities", () => {
     const app = readFileSync(join(root, "bundle", "app.js"), "utf8");
     expect(app).toContain("function hostSupportsAnnaRiskAnalysis()");
+    expect(app).toContain("function canUseDirectAnnaLlm()");
+    expect(app).toContain("enhanceRiskWithDirectAnnaLlm");
     expect(app).toContain("host_sampling: hostSampling");
     expect(app).toContain("scope === \"llm.sample\"");
     expect(app).toContain("scope === \"sampling.createMessage\"");
