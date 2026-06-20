@@ -14,7 +14,7 @@ Current shipped state:
 
 - Anna App: `RepoGuardian AI`
 - App directory: [`examples/anna-app-repoguardian-ai`](examples/anna-app-repoguardian-ai)
-- App version prepared for Anna testing: `0.1.10`
+- App version prepared for Anna testing: `0.1.11`
 - Bundled scanner tool: `repoguardian-scanner`
 - Scanner tool id: `tool-nikku696969-repoguardian-scanner-3tsnh6fp`
 - Scanner binary release: `repoguardian-scanner-v0.1.3`
@@ -34,7 +34,7 @@ RepoGuardian AI runs an end-to-end repository security workflow:
 - ranks findings by release risk and fix priority
 - asks Anna-hosted LLM/sampling for compact risk synthesis when the user grant is available
 - falls back to deterministic risk analysis when sampling is not granted
-- stores scan history through Anna App storage
+- stores compact scan history through Anna App storage
 - downloads a browser-generated PDF report for the current scan
 - generates a downloadable patch only after explicit user approval
 - prepares dry-run pull request plans without a token

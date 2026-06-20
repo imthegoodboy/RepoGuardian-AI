@@ -73,4 +73,14 @@ describe("repoguardian-ai manifest and bundle", () => {
     expect(app).toContain("%PDF-1.4");
     expect(app).toContain("repoguardian-report-");
   });
+
+  it("keeps stored scan history below Anna storage limits", () => {
+    const app = readFileSync(join(root, "bundle", "app.js"), "utf8");
+    expect(app).toContain("const STORAGE_VALUE_LIMIT_BYTES = 262144");
+    expect(app).toContain("const STORAGE_HISTORY_TARGET_BYTES = 210000");
+    expect(app).toContain("fitHistoryForStorage");
+    expect(app).toContain("saveHistorySafely");
+    expect(app).toContain("report_available: Boolean(scan.report_markdown)");
+    expect(app).not.toContain("report_markdown: scan.report_markdown");
+  });
 });

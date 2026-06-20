@@ -69,7 +69,7 @@ It can:
 - detect SQL injection and XSS patterns
 - detect bad architecture and performance risks
 - summarize release blockers
-- keep Anna storage-backed scan history
+- keep size-bounded Anna storage-backed scan history
 - generate a browser-side PDF report
 - generate an approval-gated patch
 - generate a dry-run pull request plan
@@ -79,7 +79,7 @@ Important current IDs:
 
 ```text
 App slug: repoguardian-ai
-Latest app version cut for testing: 0.1.10
+Latest app version cut for testing: 0.1.11
 Tool handle in manifest: bundled:repoguardian-scanner
 Real Anna tool id: tool-nikku696969-repoguardian-scanner-3tsnh6fp
 Binary release used: repoguardian-scanner-v0.1.3
@@ -499,7 +499,7 @@ anna-app validate --strict
 npm run test:e2e
 
 anna-app apps push --account $ANNA_HOST --json
-anna-app apps cut 0.1.10 --account $ANNA_HOST --json
+anna-app apps cut 0.1.11 --account $ANNA_HOST --json
 anna-app apps submit-review repoguardian-ai --account $ANNA_HOST --json
 anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 ```
@@ -507,7 +507,7 @@ anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 After review approval, and only when you actually want production release:
 
 ```powershell
-anna-app apps release 0.1.10 --account $ANNA_HOST --json
+anna-app apps release 0.1.11 --account $ANNA_HOST --json
 ```
 
 Important lifecycle facts:
@@ -701,6 +701,29 @@ latest published: 0.1.9
 
 This is normal until `apps release 0.1.10`.
 
+### `value JSON ... > 262144 bytes`
+
+Meaning: an Anna storage value is too large. We hit this after scanning a larger repository because the app tried to save too much scan detail into one history key.
+
+Fix:
+
+- Do not store full scan payloads in Anna key-value storage.
+- Keep the active scan in memory for the current session.
+- Store only compact history records.
+- Drop large generated fields like `report_markdown` from stored history.
+- Cap findings, dependencies, suggestions, warnings, and long text fields.
+- Make history persistence non-blocking so scan completion still succeeds if storage fails.
+
+Good pattern:
+
+```text
+current scan in memory: full details
+stored history: compact summary under 210 KB
+fallback history: latest compact scan only under 90 KB
+```
+
+Remember: Anna's observed per-value storage limit is `262144` bytes of JSON.
+
 ### Frozen Executa version looks older
 
 Anna app versions freeze bundled Executa snapshots. We saw a case where the app cut reported a frozen Executa version older than the tool row/binary release.
@@ -830,14 +853,14 @@ Push/cut:
 $ANNA_HOST = "https://anna.partners"
 
 anna-app apps push --account $ANNA_HOST --json
-anna-app apps cut 0.1.10 --account $ANNA_HOST --json
+anna-app apps cut 0.1.11 --account $ANNA_HOST --json
 anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 ```
 
 Release only when explicitly ready:
 
 ```powershell
-anna-app apps release 0.1.10 --account $ANNA_HOST --json
+anna-app apps release 0.1.11 --account $ANNA_HOST --json
 ```
 
 ## 21. Final Rule

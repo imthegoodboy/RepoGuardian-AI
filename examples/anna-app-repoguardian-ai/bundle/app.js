@@ -12,6 +12,9 @@ const TOOL_ID =
 
 const STORAGE_HISTORY = "repoguardian:history";
 const STORAGE_SETTINGS = "repoguardian:settings";
+const STORAGE_VALUE_LIMIT_BYTES = 262144;
+const STORAGE_HISTORY_TARGET_BYTES = 210000;
+const STORAGE_HISTORY_FALLBACK_BYTES = 90000;
 const MAX_INLINE_ARCHIVE_BYTES = 6 * 1024 * 1024;
 const RPC_TIMEOUT_PADDING_MS = 10000;
 const SECURITY_AGENT_SYSTEM_PROMPT = [
@@ -279,22 +282,176 @@ async function loadHistory() {
 
 async function persistScan(scan) {
   const compactScan = compactScanForStorage(scan);
-  state.scans = [compactScan, ...state.scans.filter((item) => item.scan_id !== scan.scan_id)].slice(0, 20);
-  state.currentScan = compactScan;
+  state.scans = fitHistoryForStorage([compactScan, ...state.scans.filter((item) => item.scan_id !== scan.scan_id)]);
+  state.currentScan = scan;
   state.patch = null;
   resetPatchDownload();
   $("patch-output").textContent = "(no patch generated)";
   $("patch-status").textContent = "Review the latest scan, then approve patch generation.";
-  await state.anna.storage.set({ key: STORAGE_HISTORY, value: state.scans });
+  await saveHistorySafely();
 }
 
-function compactScanForStorage(scan) {
+async function saveHistorySafely() {
+  const primary = fitHistoryForStorage(state.scans);
+  state.scans = primary;
+  try {
+    await state.anna.storage.set({ key: STORAGE_HISTORY, value: primary });
+    return;
+  } catch (err) {
+    console.warn("[repoguardian] Could not persist full scan history:", formatError(err));
+  }
+
+  const fallback = fitHistoryForStorage(state.scans.slice(0, 1), {
+    targetBytes: STORAGE_HISTORY_FALLBACK_BYTES,
+    profiles: [
+      { maxScans: 1, maxFindings: 12, maxDependencies: 8, maxSuggestions: 6, maxWarnings: 4, textLimit: 220, riskTextLimit: 700 },
+      { maxScans: 1, maxFindings: 5, maxDependencies: 3, maxSuggestions: 3, maxWarnings: 2, textLimit: 120, riskTextLimit: 360 },
+    ],
+  });
+  state.scans = fallback;
+  try {
+    await state.anna.storage.set({ key: STORAGE_HISTORY, value: fallback });
+  } catch (err) {
+    console.warn("[repoguardian] Scan completed but history storage was skipped:", formatError(err));
+  }
+}
+
+function fitHistoryForStorage(history, options = {}) {
+  const profiles =
+    options.profiles ||
+    [
+      { maxScans: 10, maxFindings: 80, maxDependencies: 60, maxSuggestions: 20, maxWarnings: 8, textLimit: 700, riskTextLimit: 1600 },
+      { maxScans: 6, maxFindings: 50, maxDependencies: 30, maxSuggestions: 12, maxWarnings: 6, textLimit: 420, riskTextLimit: 1100 },
+      { maxScans: 3, maxFindings: 28, maxDependencies: 14, maxSuggestions: 8, maxWarnings: 4, textLimit: 260, riskTextLimit: 800 },
+      { maxScans: 1, maxFindings: 16, maxDependencies: 8, maxSuggestions: 5, maxWarnings: 3, textLimit: 180, riskTextLimit: 520 },
+    ];
+  const targetBytes = Math.min(options.targetBytes || STORAGE_HISTORY_TARGET_BYTES, STORAGE_VALUE_LIMIT_BYTES - 4096);
+  for (const profile of profiles) {
+    const candidate = history.slice(0, profile.maxScans).map((scan) => compactScanForStorage(scan, profile));
+    if (jsonByteLength(candidate) <= targetBytes) return candidate;
+  }
+  return history.slice(0, 1).map((scan) =>
+    compactScanForStorage(scan, {
+      maxFindings: 3,
+      maxDependencies: 0,
+      maxSuggestions: 2,
+      maxWarnings: 1,
+      textLimit: 80,
+      riskTextLimit: 180,
+    }),
+  );
+}
+
+function compactScanForStorage(scan, limits = {}) {
+  const textLimit = limits.textLimit || 700;
+  const riskTextLimit = limits.riskTextLimit || 1600;
+  const findings = sortedFindings(scan.findings || [])
+    .slice(0, limits.maxFindings ?? 80)
+    .map((finding) => compactFindingForStorage(finding, textLimit));
+  const dependencies = (scan.dependencies || []).slice(0, limits.maxDependencies ?? 60).map((dependency) => compactDependencyForStorage(dependency, textLimit));
+  const suggestions = (scan.suggestions || []).slice(0, limits.maxSuggestions ?? 20).map((suggestion) => ({
+    severity: truncateText(suggestion.severity, 24),
+    title: truncateText(suggestion.title, textLimit),
+    file: truncateText(suggestion.file, 240),
+    action: truncateText(suggestion.action, textLimit),
+    can_auto_apply: Boolean(suggestion.can_auto_apply),
+  }));
   return {
-    ...scan,
-    findings: (scan.findings || []).slice(0, 160),
-    dependencies: (scan.dependencies || []).slice(0, 120),
-    report_markdown: scan.report_markdown || "",
+    scan_id: scan.scan_id,
+    created_at: scan.created_at,
+    duration_ms: scan.duration_ms,
+    source: compactSourceForStorage(scan.source || {}, textLimit),
+    summary: scan.summary || {},
+    risk_analysis: compactRiskForStorage(scan.risk_analysis || {}, riskTextLimit),
+    workflow: (scan.workflow || []).slice(0, 12).map((item) => ({
+      key: truncateText(item.key, 48),
+      label: truncateText(item.label, 140),
+      status: truncateText(item.status, 32),
+    })),
+    findings,
+    dependencies,
+    suggestions,
+    warnings: (scan.warnings || []).slice(0, limits.maxWarnings ?? 8).map((warning) => truncateText(warning, textLimit)),
+    inventory: compactInventoryForStorage(scan.inventory || {}),
+    report_available: Boolean(scan.report_markdown),
+    storage_compacted: true,
   };
+}
+
+function compactFindingForStorage(finding, textLimit) {
+  return {
+    id: truncateText(finding.id, 80),
+    category: truncateText(finding.category, 40),
+    severity: truncateText(finding.severity, 24),
+    title: truncateText(finding.title, textLimit),
+    file: truncateText(finding.file, 260),
+    line: finding.line ?? null,
+    evidence: truncateText(finding.evidence, Math.min(textLimit, 320)),
+    impact: truncateText(finding.impact, textLimit),
+    recommendation: truncateText(finding.recommendation, textLimit),
+    package: truncateText(finding.package, 160),
+    current_version: truncateText(finding.current_version, 80),
+    fixed_version: truncateText(finding.fixed_version, 80),
+    source: truncateText(finding.source, 120),
+    confidence: truncateText(finding.confidence, 32),
+  };
+}
+
+function compactDependencyForStorage(dependency, textLimit) {
+  return {
+    ecosystem: truncateText(dependency.ecosystem, 40),
+    package: truncateText(dependency.package || dependency.name, 160),
+    version: truncateText(dependency.version || dependency.current_version, 80),
+    latest_version: truncateText(dependency.latest_version, 80),
+    file: truncateText(dependency.file, 260),
+    scope: truncateText(dependency.scope, 80),
+    advisory_count: dependency.advisory_count || 0,
+    summary: truncateText(dependency.summary, textLimit),
+  };
+}
+
+function compactRiskForStorage(risk, textLimit) {
+  return {
+    mode: truncateText(risk.mode, 60),
+    posture: truncateText(risk.posture, 80),
+    executive_summary: truncateText(risk.executive_summary, textLimit),
+    priority_actions: (risk.priority_actions || []).slice(0, 8).map((item) => truncateText(item, Math.min(textLimit, 600))),
+    business_risk: truncateText(risk.business_risk, textLimit),
+    release_blocker: Boolean(risk.release_blocker),
+    release_blocker_reason: truncateText(risk.release_blocker_reason, Math.min(textLimit, 600)),
+    validation_plan: (risk.validation_plan || []).slice(0, 6).map((item) => truncateText(item, Math.min(textLimit, 500))),
+    confidence: truncateText(risk.confidence, 40),
+    llm_model: truncateText(risk.llm_model, 80),
+    llm_error: truncateText(risk.llm_error, 300),
+  };
+}
+
+function compactSourceForStorage(source, textLimit) {
+  return {
+    type: truncateText(source.type || source.source_type, 40),
+    repository: truncateText(source.repository, textLimit),
+    repository_url: truncateText(source.repository_url, textLimit),
+    branch: truncateText(source.branch, 120),
+    archive_name: truncateText(source.archive_name, 240),
+    path: truncateText(source.path, 260),
+  };
+}
+
+function compactInventoryForStorage(inventory) {
+  return {
+    manifests: (inventory.manifests || []).slice(0, 20).map((item) => truncateText(item, 240)),
+    file_count: inventory.file_count || inventory.files || 0,
+  };
+}
+
+function jsonByteLength(value) {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value ?? "");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
 async function clearHistory() {
