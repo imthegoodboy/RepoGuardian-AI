@@ -12,7 +12,7 @@ anna-app validate --strict
 npm run test:e2e
 
 anna-app apps push --account $HOST --json
-anna-app apps cut 0.1.7 --account $HOST --json
+anna-app apps cut 0.1.8 --account $HOST --json
 anna-app apps submit-review repoguardian-ai --account $HOST --json
 anna-app apps status repoguardian-ai --account $HOST --json
 ```
@@ -20,7 +20,7 @@ anna-app apps status repoguardian-ai --account $HOST --json
 After review approval:
 
 ```powershell
-anna-app apps release 0.1.7 --account $HOST --json
+anna-app apps release 0.1.8 --account $HOST --json
 ```
 
 Before review, verify:
