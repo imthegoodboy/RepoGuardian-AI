@@ -57,7 +57,7 @@ TOOL_ID = "tool-nikku696969-repoguardian-scanner-3tsnh6fp"
 MANIFEST = {
     "name": TOOL_ID,
     "display_name": "RepoGuardian Scanner",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": (
         "Repository security scanner for RepoGuardian AI. Clones GitHub repos "
         "or unpacks uploaded archives, detects dependency vulnerabilities, "

@@ -10,27 +10,16 @@ The main project in this workspace is **RepoGuardian AI**, a review-ready Anna A
 
 RepoGuardian AI can scan a GitHub repository or uploaded archive, detect risky code and dependencies, summarize release blockers, generate approval-gated patch files, and prepare pull request plans. It is designed to run through Anna with a bundled Executa scanner, so users do **not** need to bring an OpenAI API key or any model-provider key.
 
-
-Demo video - https://youtu.be/WevbECYU-8I
-
-
-
-
-
-
-
-
-
-
+Demo video: https://youtu.be/WevbECYU-8I
 
 Current shipped state:
 
 - Anna App: `RepoGuardian AI`
 - App directory: [`examples/anna-app-repoguardian-ai`](examples/anna-app-repoguardian-ai)
-- App version prepared for Anna testing: `0.1.11`
+- App version prepared for Anna testing: `0.1.12`
 - Bundled scanner tool: `repoguardian-scanner`
 - Scanner tool id: `tool-nikku696969-repoguardian-scanner-3tsnh6fp`
-- Scanner binary release: `repoguardian-scanner-v0.1.3`
+- Scanner binary release: `repoguardian-scanner-v0.1.4`
 - Supported binary platforms: `darwin-arm64`, `darwin-x86_64`, `linux-x86_64`, `windows-x86_64`
 
 ### What The App Does

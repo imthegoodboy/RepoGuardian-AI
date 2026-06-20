@@ -79,10 +79,10 @@ Important current IDs:
 
 ```text
 App slug: repoguardian-ai
-Latest app version cut for testing: 0.1.11
+Latest app version cut for testing: 0.1.12
 Tool handle in manifest: bundled:repoguardian-scanner
 Real Anna tool id: tool-nikku696969-repoguardian-scanner-3tsnh6fp
-Binary release used: repoguardian-scanner-v0.1.3
+Binary release used: repoguardian-scanner-v0.1.4
 ```
 
 ## 3. Recommended App Directory
@@ -412,7 +412,7 @@ Archive `manifest.json`:
 ```json
 {
   "name": "tool-id",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime": {
     "binary": {
       "entrypoint": {
@@ -499,7 +499,7 @@ anna-app validate --strict
 npm run test:e2e
 
 anna-app apps push --account $ANNA_HOST --json
-anna-app apps cut 0.1.11 --account $ANNA_HOST --json
+anna-app apps cut 0.1.12 --account $ANNA_HOST --json
 anna-app apps submit-review repoguardian-ai --account $ANNA_HOST --json
 anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 ```
@@ -507,7 +507,7 @@ anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 After review approval, and only when you actually want production release:
 
 ```powershell
-anna-app apps release 0.1.11 --account $ANNA_HOST --json
+anna-app apps release 0.1.12 --account $ANNA_HOST --json
 ```
 
 Important lifecycle facts:
@@ -664,6 +664,38 @@ Check:
 - Agent has installed the tool.
 - Agent details show `Binary` and `Running`.
 - Platform URL matches current machine architecture.
+
+### `package_name has incorrect type (expected str, got NoneType)`
+
+Meaning: the Anna Tool row has `distribution_type` set, but `package_name` is
+null. We hit this with RepoGuardian Scanner when the binary Executa profile only
+declared `executable_name` and `binary_urls`. Some Agent install/upgrade paths
+still expect `package_name` to be a string, even for binary tools.
+
+Fix:
+
+- Put `package_name` in the active `distribution` profile.
+- For binary Executas, set it to the same stable tool id as `executable_name`.
+- Republish the Executa with `anna-app executa publish`.
+- Cut/release a new app version if the app freezes bundled Executa snapshots.
+
+Good binary profile pattern:
+
+```json
+{
+  "type": "binary",
+  "package_name": "tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+  "executable_name": "tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+  "supports_protocol": true,
+  "binary_urls": {
+    "windows-x86_64": {
+      "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.4/tool-nikku696969-repoguardian-scanner-3tsnh6fp-windows-x86_64.zip",
+      "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
+      "format": "zip"
+    }
+  }
+}
+```
 
 ### Local vs Binary confusion
 
@@ -853,14 +885,14 @@ Push/cut:
 $ANNA_HOST = "https://anna.partners"
 
 anna-app apps push --account $ANNA_HOST --json
-anna-app apps cut 0.1.11 --account $ANNA_HOST --json
+anna-app apps cut 0.1.12 --account $ANNA_HOST --json
 anna-app apps status repoguardian-ai --account $ANNA_HOST --json
 ```
 
 Release only when explicitly ready:
 
 ```powershell
-anna-app apps release 0.1.11 --account $ANNA_HOST --json
+anna-app apps release 0.1.12 --account $ANNA_HOST --json
 ```
 
 ## 21. Final Rule
