@@ -21,6 +21,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -34,7 +35,7 @@ import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
@@ -57,7 +58,7 @@ TOOL_ID = "tool-nikku696969-repoguardian-scanner-3tsnh6fp"
 MANIFEST = {
     "name": TOOL_ID,
     "display_name": "RepoGuardian Scanner",
-    "version": "0.1.4",
+    "version": "0.2.0",
     "description": (
         "Repository security scanner for RepoGuardian AI. Clones GitHub repos "
         "or unpacks uploaded archives, detects dependency vulnerabilities, "
@@ -143,6 +144,14 @@ MANIFEST = {
                     "description": "Query OSV/npm/PyPI/Go registries for vulnerabilities/outdated packages.",
                     "required": False,
                     "default": True,
+                },
+                {
+                    "name": "scan_profile",
+                    "type": "string",
+                    "description": "standard or deep. Deep raises bounded file and per-file analysis limits.",
+                    "required": False,
+                    "default": "deep",
+                    "enum": ["standard", "deep"],
                 },
                 {
                     "name": "max_files",
@@ -348,6 +357,30 @@ SECRET_PATTERNS: list[tuple[str, str, str, re.Pattern[str]]] = [
         re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"),
     ),
     (
+        "GitLab access token",
+        "critical",
+        "Revoke the token, remove it from history, and replace it with a scoped runtime secret.",
+        re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b"),
+    ),
+    (
+        "Stripe live secret key",
+        "critical",
+        "Roll the live Stripe key immediately and move it to a managed runtime secret.",
+        re.compile(r"\bsk_live_[A-Za-z0-9]{20,}\b"),
+    ),
+    (
+        "Google API key",
+        "high",
+        "Restrict and rotate the Google API key, then load it from managed runtime configuration.",
+        re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),
+    ),
+    (
+        "Azure storage account key",
+        "critical",
+        "Rotate the storage key and use managed identity or a secret reference instead of a connection string.",
+        re.compile(r"(?i)\bAccountKey=[A-Za-z0-9+/=]{40,}"),
+    ),
+    (
         "Generic assignment secret",
         "medium",
         "Move the value to a runtime secret and commit only a documented environment variable name.",
@@ -529,12 +562,114 @@ STATIC_RULES: list[dict[str, Any]] = [
         "impact": "Any origin may read protected browser responses if credentials are also allowed.",
         "recommendation": "Restrict CORS origins to trusted application domains.",
     },
+    {
+        "id": "js-function-constructor",
+        "extensions": {".js", ".jsx", ".ts", ".tsx", ".mjs"},
+        "pattern": re.compile(r"\bnew\s+Function\s*\("),
+        "severity": "high",
+        "title": "Dynamic Function constructor",
+        "impact": "Runtime-generated JavaScript can turn attacker-controlled text into executable code.",
+        "recommendation": "Replace dynamic code generation with a constrained parser or explicit dispatch table.",
+    },
+    {
+        "id": "js-jwt-ignore-expiration",
+        "extensions": {".js", ".jsx", ".ts", ".tsx", ".mjs"},
+        "pattern": re.compile(r"ignoreExpiration\s*:\s*true", re.IGNORECASE),
+        "severity": "high",
+        "category": "auth",
+        "title": "JWT expiration validation disabled",
+        "impact": "Expired bearer tokens may remain valid and extend an attacker's access window.",
+        "recommendation": "Validate expiration and issuer/audience claims for every authenticated request.",
+    },
+    {
+        "id": "py-eval-exec",
+        "extensions": {".py"},
+        "pattern": re.compile(r"\b(?:eval|exec)\s*\("),
+        "severity": "high",
+        "title": "Dynamic Python execution",
+        "impact": "Untrusted input reaching eval or exec can execute arbitrary Python code.",
+        "recommendation": "Use a schema-driven parser or explicit operation allow-list instead of dynamic execution.",
+    },
+    {
+        "id": "py-os-system",
+        "extensions": {".py"},
+        "pattern": re.compile(r"\bos\.system\s*\("),
+        "severity": "high",
+        "category": "injection",
+        "title": "Shell command through os.system",
+        "impact": "Shell strings are vulnerable to command injection when they include untrusted values.",
+        "recommendation": "Use subprocess with an argument list, shell=False, and strict input validation.",
+    },
+    {
+        "id": "py-weak-hash",
+        "extensions": {".py"},
+        "pattern": re.compile(r"hashlib\.(?:md5|sha1)\s*\("),
+        "severity": "medium",
+        "category": "crypto",
+        "title": "Weak cryptographic hash",
+        "impact": "MD5 and SHA-1 are collision-prone and unsafe for security-sensitive integrity checks.",
+        "recommendation": "Use SHA-256 or a dedicated password hash such as Argon2/bcrypt for credentials.",
+    },
+    {
+        "id": "py-jwt-verification-disabled",
+        "extensions": {".py"},
+        "pattern": re.compile(r"['\"]?verify_signature['\"]?\s*[:=]\s*False", re.IGNORECASE),
+        "severity": "critical",
+        "category": "auth",
+        "title": "JWT signature verification disabled",
+        "impact": "Unsigned or attacker-forged tokens may be accepted as authenticated identities.",
+        "recommendation": "Require signature verification and validate algorithm, issuer, audience, and expiry.",
+    },
+    {
+        "id": "py-flask-debug",
+        "extensions": {".py"},
+        "pattern": re.compile(r"\.run\s*\([^)]*debug\s*=\s*True", re.IGNORECASE),
+        "severity": "high",
+        "category": "configuration",
+        "title": "Production debug mode may be enabled",
+        "impact": "Interactive debuggers can expose secrets and, in some deployments, remote code execution.",
+        "recommendation": "Disable debug mode in deployed environments and configure it only through safe local settings.",
+    },
+    {
+        "id": "docker-latest-tag",
+        "extensions": {"Dockerfile", ".dockerfile", ".yaml", ".yml"},
+        "pattern": re.compile(r"^\s*(?:FROM|image:)\s+[^\s:@]+(?::latest)?\s*$", re.IGNORECASE),
+        "severity": "medium",
+        "category": "supply-chain",
+        "title": "Unpinned container image",
+        "impact": "Mutable image tags can change without review and weaken build reproducibility.",
+        "recommendation": "Pin trusted images to an immutable digest and update them through a reviewed process.",
+    },
+    {
+        "id": "container-privileged",
+        "extensions": {".yaml", ".yml"},
+        "pattern": re.compile(r"\bprivileged\s*:\s*true\b", re.IGNORECASE),
+        "severity": "critical",
+        "category": "configuration",
+        "title": "Privileged container",
+        "impact": "Privileged containers can gain broad host access and dramatically increase escape impact.",
+        "recommendation": "Remove privileged mode and grant only the minimum required Linux capabilities.",
+    },
+    {
+        "id": "gha-unpinned-action",
+        "extensions": {".yaml", ".yml"},
+        "pattern": re.compile(r"^\s*(?:-\s*)?uses:\s*[^\s]+@(?![0-9a-f]{40}\b)[^\s#]+", re.IGNORECASE),
+        "severity": "medium",
+        "category": "supply-chain",
+        "title": "GitHub Action is not pinned to a commit",
+        "impact": "A mutable action tag can move to unreviewed code and compromise CI credentials or artifacts.",
+        "recommendation": "Pin third-party actions to a reviewed full commit SHA and update deliberately.",
+    },
 ]
 
 SEVERITY_ORDER = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 SEVERITY_WEIGHT = {"critical": 20, "high": 10, "medium": 4, "low": 1, "info": 0}
 MAX_INLINE_ARCHIVE_BYTES = 32 * 1024 * 1024
 MAX_REMOTE_ARCHIVE_BYTES = 96 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 20000
+MAX_EXTRACTED_BYTES = 256 * 1024 * 1024
+MAX_ARCHIVE_MEMBER_BYTES = 48 * 1024 * 1024
+MAX_MANIFEST_BYTES = 24 * 1024 * 1024
 
 _stdout_lock = threading.Lock()
 
@@ -772,6 +907,37 @@ def detect_git_branch(path: Path) -> str:
     return ""
 
 
+def safe_archive_target(root: Path, member_name: str) -> Path:
+    normalized = str(member_name or "").replace("\\", "/")
+    member = PurePosixPath(normalized)
+    if not normalized or member.is_absolute() or re.match(r"^[A-Za-z]:", normalized):
+        raise ValueError("Archive contains an unsafe absolute path")
+    parts = [part for part in member.parts if part not in {"", "."}]
+    if not parts or any(part == ".." for part in parts):
+        raise ValueError("Archive contains an unsafe path")
+    target = root.joinpath(*parts).resolve()
+    try:
+        target.relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError("Archive contains an unsafe path") from exc
+    return target
+
+
+def copy_archive_member(source: Any, target: Path, expected_size: int) -> int:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with target.open("wb") as output:
+        while True:
+            chunk = source.read(min(1024 * 1024, MAX_ARCHIVE_MEMBER_BYTES + 1))
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > MAX_ARCHIVE_MEMBER_BYTES or written > expected_size + 1024:
+                raise ValueError("Archive member exceeds the safe extraction limit")
+            output.write(chunk)
+    return written
+
+
 def safe_extract_zip(blob: bytes, name: str, max_archive_bytes: int = MAX_INLINE_ARCHIVE_BYTES) -> PreparedSource:
     if len(blob) > max_archive_bytes:
         raise ValueError("Archive is too large for inline scan. Use a GitHub URL for large repositories.")
@@ -781,23 +947,57 @@ def safe_extract_zip(blob: bytes, name: str, max_archive_bytes: int = MAX_INLINE
     root = Path(tmp.name) / "repo"
     root.mkdir()
     lower = archive.name.lower()
-    if lower.endswith(".zip"):
-        with zipfile.ZipFile(archive) as zf:
-            for member in zf.infolist():
-                target = (root / member.filename).resolve()
-                if not str(target).startswith(str(root.resolve())):
-                    raise ValueError("Archive contains an unsafe path")
-            zf.extractall(root)
-    elif lower.endswith((".tar", ".tar.gz", ".tgz")):
-        with tarfile.open(archive) as tf:
-            for member in tf.getmembers():
-                target = (root / member.name).resolve()
-                if not str(target).startswith(str(root.resolve())):
-                    raise ValueError("Archive contains an unsafe path")
-            tf.extractall(root)
-    else:
+    try:
+        extracted_bytes = 0
+        if lower.endswith(".zip"):
+            with zipfile.ZipFile(archive) as zf:
+                members = zf.infolist()
+                if len(members) > MAX_ARCHIVE_MEMBERS:
+                    raise ValueError("Archive contains too many files")
+                for member in members:
+                    target = safe_archive_target(root, member.filename)
+                    unix_mode = (member.external_attr >> 16) & 0xFFFF
+                    if stat.S_ISLNK(unix_mode):
+                        raise ValueError("Archive symlinks are not allowed")
+                    if member.flag_bits & 0x1:
+                        raise ValueError("Encrypted archives are not supported")
+                    if member.file_size > MAX_ARCHIVE_MEMBER_BYTES:
+                        raise ValueError("Archive member exceeds the safe extraction limit")
+                    if member.is_dir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    with zf.open(member, "r") as source:
+                        extracted_bytes += copy_archive_member(source, target, member.file_size)
+                    if extracted_bytes > MAX_EXTRACTED_BYTES:
+                        raise ValueError("Archive expands beyond the safe extraction limit")
+        elif lower.endswith((".tar", ".tar.gz", ".tgz")):
+            with tarfile.open(archive) as tf:
+                members = tf.getmembers()
+                if len(members) > MAX_ARCHIVE_MEMBERS:
+                    raise ValueError("Archive contains too many files")
+                for member in members:
+                    target = safe_archive_target(root, member.name)
+                    if member.issym() or member.islnk() or member.isdev() or member.isfifo():
+                        raise ValueError("Archive links and device entries are not allowed")
+                    if member.size > MAX_ARCHIVE_MEMBER_BYTES:
+                        raise ValueError("Archive member exceeds the safe extraction limit")
+                    if member.isdir():
+                        target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    if not member.isfile():
+                        continue
+                    source = tf.extractfile(member)
+                    if source is None:
+                        continue
+                    with source:
+                        extracted_bytes += copy_archive_member(source, target, member.size)
+                    if extracted_bytes > MAX_EXTRACTED_BYTES:
+                        raise ValueError("Archive expands beyond the safe extraction limit")
+        else:
+            raise ValueError("Uploaded repository must be a .zip, .tar, .tar.gz, or .tgz archive")
+    except Exception:
         tmp.cleanup()
-        raise ValueError("Uploaded repository must be a .zip, .tar, .tar.gz, or .tgz archive")
+        raise
     scan_root = collapse_single_directory(root)
     return PreparedSource(
         root=scan_root,
@@ -844,7 +1044,7 @@ def prepare_source(args: dict[str, Any]) -> PreparedSource:
 
 
 def should_skip(path: Path) -> bool:
-    return any(part in SKIP_DIRS for part in path.parts)
+    return any(part.lower() in SKIP_DIRS for part in path.parts)
 
 
 def is_probably_text(path: Path, sample: bytes) -> bool:
@@ -863,9 +1063,12 @@ def is_probably_text(path: Path, sample: bytes) -> bool:
 
 def iter_repo_files(root: Path, *, max_files: int, max_bytes: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     files: list[dict[str, Any]] = []
-    skipped = {"dirs": 0, "binary": 0, "large": 0, "limit": 0}
+    skipped = {"dirs": 0, "binary": 0, "large": 0, "limit": 0, "symlink": 0}
     for path in root.rglob("*"):
         rel = path.relative_to(root)
+        if path.is_symlink():
+            skipped["symlink"] += 1
+            continue
         if path.is_dir():
             if should_skip(rel):
                 skipped["dirs"] += 1
@@ -920,6 +1123,7 @@ def make_finding(
     current_version: str = "",
     fixed_version: str = "",
     source: str = "",
+    confidence: str = "",
 ) -> dict[str, Any]:
     return {
         "id": stable_id(category, severity, title, file, line, package, evidence),
@@ -935,7 +1139,7 @@ def make_finding(
         "current_version": current_version,
         "fixed_version": fixed_version,
         "source": source,
-        "confidence": "high" if severity in {"critical", "high"} else "medium",
+        "confidence": confidence or ("high" if category in {"secret", "dependency"} else "medium"),
     }
 
 
@@ -1002,6 +1206,8 @@ def scan_static(files: list[dict[str, Any]], *, max_bytes: int) -> list[dict[str
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             for rule in applicable:
+                if rule["id"] == "gha-unpinned-action" and not rel.lower().startswith(".github/workflows/"):
+                    continue
                 if rule["pattern"].search(line):
                     findings.append(
                         make_finding(
@@ -1014,6 +1220,7 @@ def scan_static(files: list[dict[str, Any]], *, max_bytes: int) -> list[dict[str
                             impact=rule["impact"],
                             recommendation=rule["recommendation"],
                             source=rule["id"],
+                            confidence=rule.get("confidence", "medium"),
                         )
                     )
     return dedupe_findings(findings)[:120]
@@ -1108,11 +1315,36 @@ def dedupe_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def parse_dependencies(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
     deps: list[dict[str, Any]] = []
     warnings: list[str] = []
+    for package_lock in root.rglob("package-lock.json"):
+        if should_skip(package_lock.relative_to(root)):
+            continue
+        try:
+            deps.extend(parse_package_lock(package_lock, root))
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not parse {package_lock.relative_to(root).as_posix()}: {exc}")
+
+    for pipfile_lock in root.rglob("Pipfile.lock"):
+        if should_skip(pipfile_lock.relative_to(root)):
+            continue
+        try:
+            deps.extend(parse_pipfile_lock(pipfile_lock, root))
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not parse {pipfile_lock.relative_to(root).as_posix()}: {exc}")
+
+    for lock_name in ("poetry.lock", "uv.lock"):
+        for lock_file in root.rglob(lock_name):
+            if should_skip(lock_file.relative_to(root)) or tomllib is None:
+                continue
+            try:
+                deps.extend(parse_python_toml_lock(lock_file, root))
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"Could not parse {lock_file.relative_to(root).as_posix()}: {exc}")
+
     for package_json in root.rglob("package.json"):
         if should_skip(package_json.relative_to(root)):
             continue
         try:
-            data = json.loads(package_json.read_text(encoding="utf-8"))
+            data = json.loads(read_bounded_manifest(package_json))
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"Could not parse {package_json.relative_to(root).as_posix()}: {exc}")
             continue
@@ -1121,24 +1353,29 @@ def parse_dependencies(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             for name, spec in (data.get(scope) or {}).items():
                 version = normalize_version_spec(str(spec))
                 if version:
-                    deps.append(dep_item("npm", name, version, spec=str(spec), file=rel, scope=scope))
+                    deps.append(dep_item("npm", name, version, spec=str(spec), file=rel, scope=scope, direct=True))
 
     for req in root.rglob("requirements*.txt"):
         if should_skip(req.relative_to(root)):
             continue
         rel = req.relative_to(root).as_posix()
-        for raw in req.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            raw_requirements = read_bounded_manifest(req)
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not parse {rel}: {exc}")
+            continue
+        for raw in raw_requirements.splitlines():
             parsed = parse_requirement_line(raw)
             if parsed:
                 name, version = parsed
-                deps.append(dep_item("PyPI", name, version, spec=raw.strip(), file=rel, scope="runtime"))
+                deps.append(dep_item("PyPI", name, version, spec=raw.strip(), file=rel, scope="runtime", direct=True))
 
     for pyproject in root.rglob("pyproject.toml"):
         if should_skip(pyproject.relative_to(root)) or tomllib is None:
             continue
         rel = pyproject.relative_to(root).as_posix()
         try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+            data = tomllib.loads(read_bounded_manifest(pyproject))
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"Could not parse {rel}: {exc}")
             continue
@@ -1146,28 +1383,54 @@ def parse_dependencies(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
             parsed = parse_requirement_line(str(spec))
             if parsed:
                 name, version = parsed
-                deps.append(dep_item("PyPI", name, version, spec=str(spec), file=rel, scope="runtime"))
+                deps.append(dep_item("PyPI", name, version, spec=str(spec), file=rel, scope="runtime", direct=True))
         poetry = data.get("tool", {}).get("poetry", {}).get("dependencies", {}) or {}
         for name, spec in poetry.items():
             if name.lower() == "python":
                 continue
             version = normalize_version_spec(str(spec))
             if version:
-                deps.append(dep_item("PyPI", name, version, spec=str(spec), file=rel, scope="runtime"))
+                deps.append(dep_item("PyPI", name, version, spec=str(spec), file=rel, scope="runtime", direct=True))
 
     for go_mod in root.rglob("go.mod"):
         if should_skip(go_mod.relative_to(root)):
             continue
         rel = go_mod.relative_to(root).as_posix()
-        deps.extend(parse_go_mod(go_mod.read_text(encoding="utf-8", errors="replace"), rel))
+        try:
+            deps.extend(parse_go_mod(read_bounded_manifest(go_mod), rel))
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Could not parse {rel}: {exc}")
 
-    unique: dict[tuple[str, str, str], dict[str, Any]] = {}
+    locked_names = {(dep["ecosystem"], dep["name"].lower()) for dep in deps if dep.get("locked")}
+    deps = [
+        dep
+        for dep in deps
+        if dep.get("locked") or (dep["ecosystem"], dep["name"].lower()) not in locked_names
+    ]
+    unique: dict[tuple[str, str, str, str], dict[str, Any]] = {}
     for dep in deps:
-        unique[(dep["ecosystem"], dep["name"].lower(), dep["version"])] = dep
+        unique[(dep["ecosystem"], dep["name"].lower(), dep["version"], dep["file"])] = dep
     return list(unique.values()), warnings
 
 
-def dep_item(ecosystem: str, name: str, version: str, *, spec: str, file: str, scope: str) -> dict[str, Any]:
+def read_bounded_manifest(path: Path) -> str:
+    if path.stat().st_size > MAX_MANIFEST_BYTES:
+        raise ValueError(f"manifest exceeds {MAX_MANIFEST_BYTES // (1024 * 1024)} MB safety limit")
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def dep_item(
+    ecosystem: str,
+    name: str,
+    version: str,
+    *,
+    spec: str,
+    file: str,
+    scope: str,
+    locked: bool = False,
+    direct: bool = True,
+) -> dict[str, Any]:
+    exact = locked or is_exact_version_spec(spec) or ecosystem == "Go"
     return {
         "ecosystem": ecosystem,
         "name": name,
@@ -1177,7 +1440,88 @@ def dep_item(ecosystem: str, name: str, version: str, *, spec: str, file: str, s
         "scope": scope,
         "latest": "",
         "outdated": False,
+        "locked": locked,
+        "direct": direct,
+        "queryable": exact,
     }
+
+
+def is_exact_version_spec(spec: str) -> bool:
+    raw = str(spec or "").strip()
+    raw = raw[2:].strip() if raw.startswith("==") else raw
+    return bool(re.fullmatch(r"v?\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9_.-]+)?", raw))
+
+
+def parse_package_lock(path: Path, root: Path) -> list[dict[str, Any]]:
+    data = json.loads(read_bounded_manifest(path))
+    rel = path.relative_to(root).as_posix()
+    deps: list[dict[str, Any]] = []
+    packages = data.get("packages") or {}
+    if isinstance(packages, dict) and packages:
+        root_metadata = packages.get("") if isinstance(packages.get(""), dict) else {}
+        direct_names = {
+            str(name)
+            for scope in ("dependencies", "devDependencies", "optionalDependencies")
+            for name in (root_metadata.get(scope) or {})
+        }
+        for install_path, metadata in packages.items():
+            if not install_path or "node_modules/" not in install_path or not isinstance(metadata, dict):
+                continue
+            name = str(metadata.get("name") or install_path.rsplit("node_modules/", 1)[-1]).strip()
+            version = normalize_version_spec(str(metadata.get("version") or ""))
+            if name and version:
+                deps.append(
+                    dep_item(
+                        "npm",
+                        name,
+                        version,
+                        spec=version,
+                        file=rel,
+                        scope="dev" if metadata.get("dev") else "runtime",
+                        locked=True,
+                        direct=name in direct_names,
+                    )
+                )
+        return deps
+
+    def walk(items: dict[str, Any], direct: bool) -> None:
+        for name, metadata in items.items():
+            if not isinstance(metadata, dict):
+                continue
+            version = normalize_version_spec(str(metadata.get("version") or ""))
+            if version:
+                deps.append(dep_item("npm", name, version, spec=version, file=rel, scope="runtime", locked=True, direct=direct))
+            walk(metadata.get("dependencies") or {}, False)
+
+    walk(data.get("dependencies") or {}, True)
+    return deps
+
+
+def parse_pipfile_lock(path: Path, root: Path) -> list[dict[str, Any]]:
+    data = json.loads(read_bounded_manifest(path))
+    rel = path.relative_to(root).as_posix()
+    deps: list[dict[str, Any]] = []
+    for section, scope in (("default", "runtime"), ("develop", "dev")):
+        for name, metadata in (data.get(section) or {}).items():
+            spec = metadata.get("version") if isinstance(metadata, dict) else metadata
+            version = normalize_version_spec(str(spec or ""))
+            if version:
+                deps.append(dep_item("PyPI", name, version, spec=version, file=rel, scope=scope, locked=True, direct=True))
+    return deps
+
+
+def parse_python_toml_lock(path: Path, root: Path) -> list[dict[str, Any]]:
+    data = tomllib.loads(read_bounded_manifest(path)) if tomllib is not None else {}
+    rel = path.relative_to(root).as_posix()
+    deps: list[dict[str, Any]] = []
+    for metadata in data.get("package") or []:
+        if not isinstance(metadata, dict):
+            continue
+        name = str(metadata.get("name") or "").strip()
+        version = normalize_version_spec(str(metadata.get("version") or ""))
+        if name and version:
+            deps.append(dep_item("PyPI", name, version, spec=version, file=rel, scope="locked", locked=True, direct=False))
+    return deps
 
 
 def normalize_version_spec(spec: str) -> str:
@@ -1215,7 +1559,7 @@ def parse_go_mod(text: str, rel: str) -> list[dict[str, Any]]:
             continue
         parts = line.split()
         if len(parts) >= 2:
-            deps.append(dep_item("Go", parts[0], parts[1].removeprefix("v"), spec=line, file=rel, scope="runtime"))
+            deps.append(dep_item("Go", parts[0], parts[1].removeprefix("v"), spec=parts[1], file=rel, scope="runtime", locked=True, direct=True))
     return deps
 
 
@@ -1224,7 +1568,7 @@ def query_dependency_network(deps: list[dict[str, Any]]) -> tuple[list[dict[str,
     if not deps:
         return deps, [], warnings
     vulns = query_osv(deps, warnings)
-    for dep in deps[:80]:
+    for dep in [item for item in deps if item.get("direct") and item.get("queryable")][:80]:
         with contextlib.suppress(Exception):
             latest = query_latest(dep["ecosystem"], dep["name"])
             if latest:
@@ -1236,15 +1580,15 @@ def query_dependency_network(deps: list[dict[str, Any]]) -> tuple[list[dict[str,
 def query_osv(deps: list[dict[str, Any]], warnings: list[str]) -> list[dict[str, Any]]:
     pairs = [
         (dep, {"package": {"ecosystem": dep["ecosystem"], "name": dep["name"]}, "version": dep["version"]})
-        for dep in deps[:100]
-        if dep["ecosystem"] in {"npm", "PyPI", "Go"} and dep.get("version")
-    ]
+        for dep in deps
+        if dep["ecosystem"] in {"npm", "PyPI", "Go"} and dep.get("version") and dep.get("queryable")
+    ][:100]
     if not pairs:
         return []
     req = urllib.request.Request(
         "https://api.osv.dev/v1/querybatch",
         data=json.dumps({"queries": [query for _, query in pairs]}).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "RepoGuardianAI/0.1"},
+        headers={"Content-Type": "application/json", "User-Agent": "RepoGuardianAI/0.2"},
         method="POST",
     )
     try:
@@ -1282,18 +1626,35 @@ def query_osv(deps: list[dict[str, Any]], warnings: list[str]) -> list[dict[str,
 
 
 def osv_severity(vuln: dict[str, Any]) -> str:
+    labels = [
+        (vuln.get("database_specific") or {}).get("severity"),
+        (vuln.get("ecosystem_specific") or {}).get("severity"),
+    ]
+    severity_map = {
+        "critical": "critical",
+        "high": "high",
+        "moderate": "medium",
+        "medium": "medium",
+        "low": "low",
+    }
+    for label in labels:
+        normalized = str(label or "").strip().lower()
+        if normalized in severity_map:
+            return severity_map[normalized]
     for item in vuln.get("severity") or []:
         score = str(item.get("score") or "")
-        if score.upper().startswith("CVSS:"):
-            numeric = re.search(r"(\d+(?:\.\d+)?)", score)
-            if numeric:
-                value = float(numeric.group(1))
-                if value >= 9:
-                    return "critical"
-                if value >= 7:
-                    return "high"
-                if value >= 4:
-                    return "medium"
+        # OSV commonly returns a CVSS *vector*, whose first number is the
+        # specification version (for example 3.1), not the vulnerability score.
+        # Only map a bare numeric score; otherwise prefer the advisory label.
+        if re.fullmatch(r"\d+(?:\.\d+)?", score.strip()):
+            value = float(score)
+            if value >= 9:
+                return "critical"
+            if value >= 7:
+                return "high"
+            if value >= 4:
+                return "medium"
+            return "low"
     return "high"
 
 
@@ -1323,7 +1684,7 @@ def query_latest(ecosystem: str, name: str) -> str:
         field = "Version"
     else:
         return ""
-    req = urllib.request.Request(url, headers={"User-Agent": "RepoGuardianAI/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "RepoGuardianAI/0.2"})
     with urllib.request.urlopen(req, timeout=8) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if isinstance(field, tuple):
@@ -1351,7 +1712,7 @@ def compare_versions(current: str, latest: str) -> int:
 def outdated_findings(deps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     for dep in deps:
-        if dep.get("outdated"):
+        if dep.get("outdated") and dep.get("direct"):
             findings.append(
                 make_finding(
                     category="dependency",
@@ -1377,7 +1738,19 @@ def repo_inventory(root: Path, files: list[dict[str, Any]]) -> dict[str, Any]:
         path = Path(item["rel"])
         suffix = path.suffix.lower() or path.name
         languages[suffix] = languages.get(suffix, 0) + 1
-        if path.name in {"package.json", "requirements.txt", "pyproject.toml", "go.mod", "pom.xml", "Gemfile"}:
+        if path.name in {
+            "package.json",
+            "package-lock.json",
+            "requirements.txt",
+            "Pipfile.lock",
+            "pyproject.toml",
+            "poetry.lock",
+            "uv.lock",
+            "go.mod",
+            "go.sum",
+            "pom.xml",
+            "Gemfile",
+        }:
             manifests.append(item["rel"])
     top = sorted(languages.items(), key=lambda kv: kv[1], reverse=True)[:8]
     return {
@@ -1534,8 +1907,13 @@ def scan_repository(**args: Any) -> dict[str, Any]:
     prepared = prepare_source(args)
     warnings: list[str] = []
     try:
-        max_files = max(50, min(20000, int(args.get("max_files") or 6000)))
-        max_bytes = max(4096, min(1_000_000, int(args.get("max_bytes") or 250000)))
+        scan_profile = str(args.get("scan_profile") or "deep").strip().lower()
+        if scan_profile not in {"standard", "deep"}:
+            raise ValueError("scan_profile must be standard or deep")
+        default_max_files = 12000 if scan_profile == "deep" else 6000
+        default_max_bytes = 500000 if scan_profile == "deep" else 250000
+        max_files = max(50, min(20000, int(args.get("max_files") or default_max_files)))
+        max_bytes = max(4096, min(1_000_000, int(args.get("max_bytes") or default_max_bytes)))
         files, skipped = iter_repo_files(prepared.root, max_files=max_files, max_bytes=max_bytes)
         inventory = repo_inventory(prepared.root, files)
         deps, dep_warnings = parse_dependencies(prepared.root)
@@ -1555,6 +1933,32 @@ def scan_repository(**args: Any) -> dict[str, Any]:
         findings = dedupe_findings(dep_findings + secret_findings + static_findings + architecture_findings)
         summary_obj = summarize(findings)
         suggestions = build_suggestions(findings)
+        exact_dependencies = sum(1 for dep in deps if dep.get("queryable"))
+        manifest_only_dependencies = len(deps) - exact_dependencies
+        coverage = {
+            "profile": scan_profile,
+            "inspected_files": len(files),
+            "inspected_bytes": sum(min(int(item.get("size") or 0), max_bytes) for item in files),
+            "per_file_byte_limit": max_bytes,
+            "file_limit": max_files,
+            "secret_detectors": len(SECRET_PATTERNS),
+            "static_rules": len(STATIC_RULES),
+            "dependencies_parsed": len(deps),
+            "dependencies_with_exact_versions": exact_dependencies,
+            "manifest_only_dependencies": manifest_only_dependencies,
+            "network_checks": bool(args.get("dependency_network", True)),
+            "skipped": skipped,
+        }
+        if skipped.get("large"):
+            warnings.append(f"{skipped['large']} files exceeded the per-file analysis limit and were not inspected.")
+        if skipped.get("limit"):
+            warnings.append("The repository file limit was reached; remaining files were not inspected.")
+        if skipped.get("symlink"):
+            warnings.append(f"{skipped['symlink']} symlinks were excluded from the scan boundary.")
+        if manifest_only_dependencies:
+            warnings.append(
+                f"{manifest_only_dependencies} dependencies had range-only manifest versions; OSV checks require exact lockfile versions."
+            )
         include_ai = bool(args.get("include_ai", True))
         host_sampling = bool(args.get("host_sampling", False))
         if include_ai and host_sampling:
@@ -1589,6 +1993,7 @@ def scan_repository(**args: Any) -> dict[str, Any]:
                 {"key": "pr", "label": "Generate pull request", "status": "ready"},
             ],
             "inventory": inventory,
+            "coverage": coverage,
             "skipped": skipped,
             "dependencies": deps[:250],
             "summary": summary_obj,

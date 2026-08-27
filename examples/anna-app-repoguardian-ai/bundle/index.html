@@ -19,11 +19,11 @@
         </div>
 
         <nav class="nav" id="nav">
-          <button class="nav-item is-active" type="button" data-page="dashboard">
+          <button class="nav-item" type="button" data-page="dashboard">
             <span class="nav-icon" aria-hidden="true">D</span>
             Dashboard
           </button>
-          <button class="nav-item" type="button" data-page="scan">
+          <button class="nav-item is-active" type="button" data-page="scan">
             <span class="nav-icon" aria-hidden="true">+</span>
             New Scan
           </button>
@@ -58,17 +58,17 @@
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyeless">Autonomous repository security workspace</p>
-            <h1 id="page-title">Dashboard</h1>
+            <p class="eyeless">REPOSITORY DEFENSE CONSOLE / EVIDENCE-FIRST</p>
+            <h1 id="page-title">Scan Repository</h1>
           </div>
           <div class="top-actions">
             <button class="btn btn-secondary" id="refresh-history-btn" type="button">Refresh</button>
             <a class="btn btn-secondary is-disabled" id="download-report-pdf-btn" href="#" aria-disabled="true">Download report PDF</a>
-            <button class="btn btn-primary" id="quick-scan-btn" type="button">Start scan</button>
+            <button class="btn btn-primary" id="quick-scan-btn" type="button">New scan</button>
           </div>
         </header>
 
-        <section class="page is-active" id="page-dashboard" aria-labelledby="page-title">
+        <section class="page" id="page-dashboard" aria-labelledby="page-title">
           <div class="metric-grid">
             <article class="metric">
               <span>Risk score</span>
@@ -136,10 +136,31 @@
                 </table>
               </div>
             </section>
+
+            <section class="panel panel-wide coverage-panel">
+              <header class="panel-head">
+                <div>
+                  <h2>Scan Coverage</h2>
+                  <p>Exact inspection boundary and dependency confidence for this run.</p>
+                </div>
+              </header>
+              <dl class="coverage-grid">
+                <div><dt>Files inspected</dt><dd id="coverage-files">—</dd></div>
+                <div><dt>Source bytes</dt><dd id="coverage-bytes">—</dd></div>
+                <div><dt>Detectors</dt><dd id="coverage-rules">—</dd></div>
+                <div><dt>Exact dependencies</dt><dd id="coverage-deps">—</dd></div>
+              </dl>
+              <p class="coverage-note" id="coverage-skipped">Run a scan to see the analysis boundary.</p>
+            </section>
           </div>
         </section>
 
-        <section class="page" id="page-scan">
+        <section class="page is-active" id="page-scan" aria-labelledby="page-title">
+          <div class="scan-intro">
+            <span class="kicker">START HERE</span>
+            <h2>Inspect a repository before it ships.</h2>
+            <p>Choose one source. RepoGuardian analyzes code, committed secrets, dependencies, workflow supply chain, architecture, and release risk without modifying the repository.</p>
+          </div>
           <div class="split">
             <section class="panel">
               <header class="panel-head">
@@ -159,8 +180,9 @@
               <label class="field">
                 <span>GitHub token for private clone</span>
                 <input id="scan-github-token" type="password" placeholder="Only used for this request" autocomplete="off" />
+                <small>Runtime-only. Cleared after the scan and never stored in history.</small>
               </label>
-              <button class="btn btn-primary btn-block" id="github-scan-btn" type="button">Connect GitHub and scan</button>
+              <button class="btn btn-primary btn-block" id="github-scan-btn" type="button">Run repository scan</button>
             </section>
 
             <section class="panel">
@@ -196,11 +218,26 @@
                 <span>OSV and registry checks</span>
               </label>
               <label class="field compact">
+                <span>Scan depth</span>
+                <select id="scan-profile">
+                  <option value="deep" selected>Deep · 12k files</option>
+                  <option value="standard">Standard · 6k files</option>
+                </select>
+              </label>
+              <label class="field compact">
                 <span>Max files</span>
-                <input id="max-files" type="number" value="6000" min="50" max="20000" />
+                <input id="max-files" type="number" value="12000" min="50" max="20000" />
+              </label>
+              <label class="field compact">
+                <span>Per-file limit</span>
+                <select id="max-bytes">
+                  <option value="250000">250 KB</option>
+                  <option value="500000" selected>500 KB</option>
+                  <option value="1000000">1 MB</option>
+                </select>
               </label>
             </div>
-            <div class="status-box" id="scan-status">Idle</div>
+            <div class="status-box" id="scan-status" role="status" aria-live="polite">Ready. The scan is read-only.</div>
           </section>
         </section>
 
@@ -212,6 +249,7 @@
                 <p id="all-findings-caption">Filter and inspect scanner evidence.</p>
               </div>
               <div class="filters">
+                <input id="finding-search" class="filter-search" type="search" placeholder="Search finding, file, evidence…" aria-label="Search findings" />
                 <select id="severity-filter" aria-label="Severity filter">
                   <option value="all">All severities</option>
                   <option value="critical">Critical</option>
@@ -226,6 +264,10 @@
                   <option value="static">Static analysis</option>
                   <option value="injection">SQL injection</option>
                   <option value="xss">XSS</option>
+                  <option value="auth">Authentication</option>
+                  <option value="crypto">Cryptography</option>
+                  <option value="configuration">Configuration</option>
+                  <option value="supply-chain">Supply chain</option>
                   <option value="architecture">Bad architecture</option>
                   <option value="performance">Performance</option>
                 </select>
@@ -253,14 +295,14 @@
               <header class="panel-head">
                 <div>
                   <h2>Approved Fix Patch</h2>
-                  <p>User approval is required before generating a patch artifact.</p>
+                  <p>Approval is required. Generated changes are limited to an audit report, dependency automation, and secret-hygiene files.</p>
                 </div>
               </header>
               <label class="switch danger">
                 <input id="patch-approved" type="checkbox" />
-                <span>I approve RepoGuardian AI generating a fix patch</span>
+                <span>I approve generating this repository-hygiene patch</span>
               </label>
-              <button class="btn btn-primary btn-block" id="generate-patch-btn" type="button">AI generates fix</button>
+              <button class="btn btn-primary btn-block" id="generate-patch-btn" type="button">Generate safe hygiene patch</button>
               <a class="btn btn-secondary btn-block is-disabled" id="download-patch-btn" href="#" aria-disabled="true">Download patch</a>
               <div class="status-box" id="patch-status">Run a scan, review findings, then approve patch generation.</div>
             </section>
@@ -297,6 +339,7 @@
               <label class="field">
                 <span>GitHub token</span>
                 <input id="pr-github-token" type="password" placeholder="Required only when dry run is off" autocomplete="off" />
+                <small>Runtime-only. Cleared after this request and never saved by RepoGuardian.</small>
               </label>
               <label class="switch">
                 <input id="pr-dry-run" type="checkbox" checked />
@@ -305,6 +348,10 @@
               <label class="switch danger">
                 <input id="pr-approved" type="checkbox" />
                 <span>I approve creating a real pull request</span>
+              </label>
+              <label class="field real-pr-confirmation">
+                <span>For a real PR, type owner/repository</span>
+                <input id="pr-confirm-repo" type="text" placeholder="owner/repository" autocomplete="off" />
               </label>
               <button class="btn btn-primary btn-block" id="generate-pr-btn" type="button">Generate PR</button>
             </section>

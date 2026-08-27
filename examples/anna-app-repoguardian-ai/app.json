@@ -1,10 +1,20 @@
 {
   "slug": "repoguardian-ai",
   "name": "RepoGuardian AI",
-  "version": "0.1.12",
-  "tagline": "An autonomous Anna security engineer for repository scans, fixes, and pull requests.",
-  "description": "RepoGuardian AI connects to a GitHub repository or scans an uploaded repository archive, then runs a real security workflow: clone or unpack, dependency and vulnerability analysis, static code checks, secret detection, Anna-hosted risk synthesis, suggested fixes, pull-request preparation, PDF report export, and compact security history tracking.\n\n**What is included**\n\n- A multi-page Anna App UI for scan setup, findings triage, PDF report download, PR generation, history, and settings.\n- `repoguardian-scanner` - a bundled Python Executa that performs deterministic repository scanning and can ask Anna reverse sampling for risk analysis without any external API key.\n- A compact security-agent prompt path that prioritizes release blockers, evidence, fix order, and validation without overloading context.\n- Size-bounded scan history through Anna App storage.\n- Browser-generated PDF report download for the current scan.\n\n**How to use**\n\nOpen RepoGuardian AI, scan a public GitHub URL or upload a small repository archive, review findings, download the PDF report when needed, then ask the security agent for triage or generate a dry-run PR plan. Create a real GitHub pull request only after explicit approval and a runtime GitHub token. Secrets are never committed to the app bundle.",
+  "version": "0.2.0",
+  "tagline": "Deep repository security review, evidence-grounded triage, and approval-gated remediation.",
+  "description": "RepoGuardian AI opens directly into a repository defense console. Scan a public or token-authenticated GitHub repository, or upload a small zip/tar archive, then inspect a bounded and evidence-grounded security review.\n\n**Deep repository checks**\n\n- Safe archive extraction with traversal, symlink, device-file, file-count, member-size, and expanded-size defenses.\n- Redacted committed-secret detection plus static checks for injection, XSS, unsafe execution and deserialization, authentication, cryptography, configuration, CI supply chain, architecture, and performance risk.\n- npm, PyPI, and Go dependency parsing that prefers exact lockfile versions before querying OSV and package registries.\n- Explicit scan coverage, skipped-file limits, confidence labels, and deterministic risk analysis when Anna sampling is unavailable.\n\n**Review and remediation**\n\n- Source-grounded Anna security-agent Q&A, compact cross-session history, finding search and filters, and a browser-generated PDF report.\n- Explicitly approved repository-hygiene patch generation and dry-run PR plans.\n- Real GitHub PR creation only after approval, typed repository confirmation, and a runtime token that is cleared and never persisted.\n\nNo separate model-provider key is required. Repository scans are read-only until the user explicitly approves a patch or real pull request.",
   "category": "developer-tools",
+  "logo_url": "https://raw.githubusercontent.com/imthegoodboy/RepoGuardian-AI/main/examples/anna-app-repoguardian-ai/bundle/icon.svg",
+  "cover_url": "https://raw.githubusercontent.com/imthegoodboy/RepoGuardian-AI/main/examples/anna-app-repoguardian-ai/listing/02-risk-dashboard.png",
+  "screenshots": [
+    "https://raw.githubusercontent.com/imthegoodboy/RepoGuardian-AI/main/examples/anna-app-repoguardian-ai/listing/01-deep-scan-workspace.png",
+    "https://raw.githubusercontent.com/imthegoodboy/RepoGuardian-AI/main/examples/anna-app-repoguardian-ai/listing/02-risk-dashboard.png",
+    "https://raw.githubusercontent.com/imthegoodboy/RepoGuardian-AI/main/examples/anna-app-repoguardian-ai/listing/03-evidence-findings.png"
+  ],
+  "homepage_url": "https://github.com/imthegoodboy/RepoGuardian-AI/tree/main/examples/anna-app-repoguardian-ai",
+  "support_url": "https://github.com/imthegoodboy/RepoGuardian-AI/issues",
+  "privacy_url": "https://github.com/imthegoodboy/RepoGuardian-AI/tree/main/examples/anna-app-repoguardian-ai#privacy",
   "pricing_model": "free",
   "bundled_executas": {
     "repoguardian-scanner": {

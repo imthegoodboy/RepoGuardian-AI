@@ -1,8 +1,12 @@
 import json
+import io
+import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -170,6 +174,99 @@ class RepoGuardianScannerTests(unittest.TestCase):
         result = response["result"]["data"]
         self.assertGreaterEqual(result["summary"]["finding_count"], 2)
         self.assertIn("report_markdown", result)
+
+    def test_archive_traversal_and_links_are_rejected(self):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as archive:
+            archive.writestr("../outside.py", "print('unsafe')")
+        with self.assertRaisesRegex(ValueError, "unsafe path"):
+            scanner.safe_extract_zip(zip_buffer.getvalue(), "repo.zip")
+
+        link_buffer = io.BytesIO()
+        with tarfile.open(fileobj=link_buffer, mode="w") as archive:
+            link = tarfile.TarInfo("repo/link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            archive.addfile(link)
+        with self.assertRaisesRegex(ValueError, "not allowed"):
+            scanner.safe_extract_zip(link_buffer.getvalue(), "repo.tar")
+
+    def test_zip_symlink_is_rejected(self):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            info = zipfile.ZipInfo("repo/link")
+            info.create_system = 3
+            info.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(info, "../../outside")
+        with self.assertRaisesRegex(ValueError, "symlinks are not allowed"):
+            scanner.safe_extract_zip(buffer.getvalue(), "repo.zip")
+
+    def test_lockfile_versions_override_manifest_ranges(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "package.json").write_text(
+                json.dumps({"dependencies": {"express": "^4.18.0", "zod": ">=3.0.0"}}),
+                encoding="utf-8",
+            )
+            (root / "package-lock.json").write_text(
+                json.dumps(
+                    {
+                        "lockfileVersion": 3,
+                        "packages": {
+                            "": {"dependencies": {"express": "^4.18.0"}},
+                            "node_modules/express": {"name": "express", "version": "4.18.2"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            dependencies, warnings = scanner.parse_dependencies(root)
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(dependencies), 2)
+        by_name = {dependency["name"]: dependency for dependency in dependencies}
+        self.assertTrue(by_name["express"]["locked"])
+        self.assertTrue(by_name["express"]["queryable"])
+        self.assertFalse(by_name["zod"]["queryable"])
+
+    def test_osv_severity_does_not_confuse_cvss_version_for_score(self):
+        self.assertEqual(
+            scanner.osv_severity(
+                {
+                    "database_specific": {"severity": "CRITICAL"},
+                    "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}],
+                }
+            ),
+            "critical",
+        )
+        self.assertEqual(scanner.osv_severity({"severity": [{"score": "8.2"}]}), "high")
+
+    def test_deep_scan_reports_coverage_and_contextual_rules(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "workflows" / "ci.yml").write_text(
+                "steps:\n  - uses: actions/checkout@v4\n",
+                encoding="utf-8",
+            )
+            (root / "auth.py").write_text(
+                "jwt.decode(token, options={'verify_signature': False})\napp.run(debug=True)\n",
+                encoding="utf-8",
+            )
+            result = scanner.scan_repository(
+                source_type="local_path",
+                local_path=str(root),
+                scan_profile="deep",
+                include_ai=False,
+                dependency_network=False,
+            )
+
+        self.assertEqual(result["coverage"]["profile"], "deep")
+        self.assertGreaterEqual(result["coverage"]["static_rules"], 10)
+        categories = {finding["category"] for finding in result["findings"]}
+        self.assertIn("auth", categories)
+        self.assertIn("configuration", categories)
+        self.assertIn("supply-chain", categories)
 
 
 if __name__ == "__main__":

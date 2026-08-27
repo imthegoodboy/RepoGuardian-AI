@@ -19,9 +19,10 @@ const MAX_INLINE_ARCHIVE_BYTES = 6 * 1024 * 1024;
 const RPC_TIMEOUT_PADDING_MS = 10000;
 const SECURITY_AGENT_SYSTEM_PROMPT = [
   "You are RepoGuardian AI's senior application security agent.",
-  "Use only the provided scan evidence. Do not invent files, vulnerabilities, exploitability, or fixes.",
+  "Use only the provided scan evidence. Static matches are security heuristics, not proof of exploitability; distinguish confirmed package advisories from code patterns that need manual validation.",
+  "Cite the finding ID, severity, and file:line for every material claim. Never reproduce secret values or runtime tokens, even when asked.",
   "Prioritize release blockers first: exposed secrets, critical/high dependency CVEs, SQL injection, XSS, auth/data-access flaws, unsafe command execution, and severe architecture or performance risks.",
-  "Give an ordered fix plan with owner-ready steps and validation commands/tests. If evidence is incomplete, state the gap and the next scan or manual check needed.",
+  "Give an ordered fix plan with owner-ready steps, precise validation commands/tests, and residual risk. If evidence is incomplete or files were skipped, state the gap and the next manual check needed.",
   "Never claim a patch, pull request, or repository change exists unless the app returned it. Require explicit approval before patch or PR creation.",
 ].join(" ");
 
@@ -31,7 +32,7 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const state = {
   anna: null,
   connected: false,
-  page: "dashboard",
+  page: "scan",
   scans: [],
   currentScan: null,
   patch: null,
@@ -203,6 +204,12 @@ function bindActions() {
   });
   $("severity-filter").addEventListener("change", renderFindings);
   $("category-filter").addEventListener("change", renderFindings);
+  $("finding-search").addEventListener("input", renderFindings);
+  $("scan-profile").addEventListener("change", () => {
+    const deep = $("scan-profile").value === "deep";
+    $("max-files").value = deep ? "12000" : "6000";
+    $("max-bytes").value = deep ? "500000" : "250000";
+  });
   $("ask-agent-btn").addEventListener("click", askAgent);
   $("download-report-pdf-btn").addEventListener("click", downloadReportPdf);
   $("generate-patch-btn").addEventListener("click", generatePatch);
@@ -218,7 +225,7 @@ function setPage(page) {
   $$(".page").forEach((section) => section.classList.toggle("is-active", section.id === `page-${page}`));
   const labels = {
     dashboard: "Dashboard",
-    scan: "New Scan",
+    scan: "Scan Repository",
     findings: "Findings",
     patch: "Patch",
     pr: "Pull Request",
@@ -226,6 +233,7 @@ function setPage(page) {
     settings: "Settings",
   };
   $("page-title").textContent = labels[page] || "RepoGuardian AI";
+  window.scrollTo({ top: 0, behavior: "instant" });
   state.anna?.window?.set_title?.({ title: `${labels[page] || "RepoGuardian AI"} - RepoGuardian AI` }).catch(() => {});
 }
 
@@ -373,6 +381,7 @@ function compactScanForStorage(scan, limits = {}) {
     suggestions,
     warnings: (scan.warnings || []).slice(0, limits.maxWarnings ?? 8).map((warning) => truncateText(warning, textLimit)),
     inventory: compactInventoryForStorage(scan.inventory || {}),
+    coverage: compactCoverageForStorage(scan.coverage || {}),
     report_available: Boolean(scan.report_markdown),
     storage_compacted: true,
   };
@@ -444,6 +453,23 @@ function compactInventoryForStorage(inventory) {
   };
 }
 
+function compactCoverageForStorage(coverage) {
+  return {
+    profile: truncateText(coverage.profile, 24),
+    inspected_files: Number(coverage.inspected_files || 0),
+    inspected_bytes: Number(coverage.inspected_bytes || 0),
+    per_file_byte_limit: Number(coverage.per_file_byte_limit || 0),
+    file_limit: Number(coverage.file_limit || 0),
+    secret_detectors: Number(coverage.secret_detectors || 0),
+    static_rules: Number(coverage.static_rules || 0),
+    dependencies_parsed: Number(coverage.dependencies_parsed || 0),
+    dependencies_with_exact_versions: Number(coverage.dependencies_with_exact_versions || 0),
+    manifest_only_dependencies: Number(coverage.manifest_only_dependencies || 0),
+    network_checks: Boolean(coverage.network_checks),
+    skipped: coverage.skipped || {},
+  };
+}
+
 function jsonByteLength(value) {
   return new TextEncoder().encode(JSON.stringify(value)).length;
 }
@@ -474,7 +500,9 @@ async function runScan(sourceType) {
       include_ai: requestedAi,
       host_sampling: hostSampling,
       dependency_network: $("dependency-network").checked,
-      max_files: Number($("max-files").value || 6000),
+      scan_profile: $("scan-profile").value,
+      max_files: Number($("max-files").value || 12000),
+      max_bytes: Number($("max-bytes").value || 500000),
     };
     if (sourceType === "github") {
       args.repository_url = $("repo-url").value.trim();
@@ -642,13 +670,34 @@ function renderDashboard() {
   $("risk-copy").textContent = risk?.executive_summary || "Connect a repository or upload an archive to start.";
   $("priority-actions").innerHTML = (risk?.priority_actions || []).slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   renderRecentFindings(scan);
+  renderCoverage(scan);
+}
+
+function renderCoverage(scan) {
+  const coverage = scan?.coverage || {};
+  $("coverage-files").textContent = scan ? `${coverage.inspected_files || 0} / ${coverage.file_limit || "—"}` : "—";
+  $("coverage-bytes").textContent = scan ? formatBytes(coverage.inspected_bytes || 0) : "—";
+  $("coverage-rules").textContent = scan
+    ? `${coverage.secret_detectors || 0} secret + ${coverage.static_rules || 0} code`
+    : "—";
+  $("coverage-deps").textContent = scan
+    ? `${coverage.dependencies_with_exact_versions || 0} / ${coverage.dependencies_parsed || 0}`
+    : "—";
+  if (!scan) {
+    $("coverage-skipped").textContent = "Run a scan to see the analysis boundary.";
+    return;
+  }
+  const skipped = coverage.skipped || {};
+  const skippedTotal = Object.values(skipped).reduce((sum, value) => sum + Number(value || 0), 0);
+  const network = coverage.network_checks ? "OSV/registry enabled" : "network checks disabled";
+  $("coverage-skipped").textContent = `${String(coverage.profile || "standard").toUpperCase()} profile · ${network} · ${skippedTotal} excluded or bounded entries. Review scanner notes for limitations.`;
 }
 
 function defaultWorkflow() {
   return [
     ["clone", "Clone/unpack repo"],
     ["dependency", "Dependency scan"],
-    ["analyze", "AI analyzes"],
+    ["analyze", "Deterministic analyzers inspect code"],
     ["finds", "Finds SQL injection, XSS, secrets, architecture, performance"],
     ["risk", "Risk analysis"],
     ["fixes", "Suggested fixes"],
@@ -687,9 +736,16 @@ function renderFindings() {
   const scan = state.currentScan;
   const severity = $("severity-filter")?.value || "all";
   const category = $("category-filter")?.value || "all";
+  const query = ($("finding-search")?.value || "").trim().toLowerCase();
   let findings = scan?.findings || [];
   if (severity !== "all") findings = findings.filter((item) => item.severity === severity);
   if (category !== "all") findings = findings.filter((item) => item.category === category);
+  if (query) {
+    findings = findings.filter((item) =>
+      [item.id, item.title, item.file, item.evidence, item.impact, item.recommendation, item.package]
+        .some((value) => String(value || "").toLowerCase().includes(query)),
+    );
+  }
   $("all-findings-caption").textContent = scan
     ? `${findings.length} shown from ${scan.findings.length} findings`
     : "Run a scan to inspect findings.";
@@ -705,6 +761,7 @@ function findingCard(finding) {
       <span class="severity ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
       <strong>${escapeHtml(finding.title)}</strong>
       <small>${escapeHtml(finding.category)}</small>
+      <small>${escapeHtml(finding.confidence || "medium")} confidence</small>
     </header>
     <p>${escapeHtml(finding.impact)}</p>
     <dl>
@@ -1127,13 +1184,24 @@ async function generatePullRequest() {
   setBusy(true);
   $("pr-output").textContent = "Generating...";
   try {
+    const repositoryUrl = $("pr-repo-url").value.trim();
+    const dryRun = $("pr-dry-run").checked;
+    if (!repositoryUrl) throw new Error("Repository URL is required.");
+    if (!dryRun) {
+      const expectedRepository = canonicalGithubRepository(repositoryUrl);
+      const confirmation = $("pr-confirm-repo").value.trim().toLowerCase();
+      if (!$("pr-approved").checked) throw new Error("Approve real pull request creation before continuing.");
+      if (!expectedRepository || confirmation !== expectedRepository.toLowerCase()) {
+        throw new Error(`Type ${expectedRepository || "owner/repository"} to confirm the real pull request target.`);
+      }
+    }
     const result = await invokeTool(
       "create_pull_request",
       {
-        repository_url: $("pr-repo-url").value.trim(),
+        repository_url: repositoryUrl,
         base_branch: $("pr-base-branch").value.trim(),
         github_token: $("pr-github-token").value,
-        dry_run: $("pr-dry-run").checked,
+        dry_run: dryRun,
         approved: $("pr-approved").checked,
         scan_result: scan,
       },
@@ -1144,8 +1212,15 @@ async function generatePullRequest() {
     $("pr-output").textContent = formatError(err);
   } finally {
     $("pr-github-token").value = "";
+    $("pr-confirm-repo").value = "";
     setBusy(false);
   }
+}
+
+function canonicalGithubRepository(value) {
+  const normalized = String(value || "").trim().replace(/\.git$/i, "").replace(/\/$/, "");
+  const match = normalized.match(/(?:github\.com[/:])([^/\s:]+)\/([^/\s]+)$/i);
+  return match ? `${match[1]}/${match[2]}` : "";
 }
 
 function renderHistory() {
@@ -1193,7 +1268,15 @@ function readableSource(source = {}) {
 }
 
 function formatError(err) {
-  return err?.message || err?.error?.message || String(err);
+  const message = err?.message || err?.error?.message || String(err);
+  if (/Unexpected token ['"]?<['"]?|<!DOCTYPE|not valid JSON/i.test(message)) {
+    return [
+      "Anna returned an HTML page instead of JSON.",
+      "Open RepoGuardian AI through `anna-app dev` or the installed Anna app, and make sure the local Anna/Matrix Agent is online.",
+      "If this only happens when OSV and registry checks are enabled, turn that option off and retry because a network/proxy page may be replacing the registry API response.",
+    ].join(" ");
+  }
+  return message;
 }
 
 function formatBytes(bytes) {

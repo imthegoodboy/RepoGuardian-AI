@@ -6,11 +6,13 @@ It can:
 
 - scan a public or token-authenticated GitHub repository
 - scan a small uploaded zip/tar repository archive
-- detect committed secrets with redacted evidence
-- parse npm, PyPI, and Go dependency manifests
+- reject archive traversal, links, device files, excessive members, and extraction bombs
+- detect committed secrets with redacted evidence across common GitHub, GitLab, AWS, Stripe, Google, Azure, and generic credential formats
+- parse npm, PyPI, and Go dependency manifests and prefer exact lockfile versions
 - query OSV and package registries when network checks are enabled
-- flag static code risks such as `eval`, `shell=True`, unsafe YAML, pickle, weak hashes, and wildcard CORS
-- flag SQL injection, XSS, bad architecture, and performance risks
+- flag static code risks such as `eval`, `exec`, `shell=True`, `os.system`, unsafe YAML, pickle, weak hashes, JWT validation bypasses, debug mode, privileged containers, unpinned Actions, and wildcard CORS
+- flag SQL injection, XSS, authentication, cryptography, configuration, CI supply-chain, bad architecture, and performance risks
+- show the exact file/byte/rule/dependency coverage and skipped-scan limitations
 - ask Anna reverse sampling for risk synthesis without any provider API key
 - store compact scan history in Anna App storage without exceeding per-value limits
 - download a browser-generated PDF report for the current scan
@@ -55,9 +57,17 @@ Scan history is intentionally compacted before storage. The active scan keeps fu
 - GitHub tokens are entered at runtime only and are cleared from the UI after each scan or PR attempt.
 - Scanner output redacts matched secret evidence before returning it to the UI.
 - Real PR creation requires `dry_run=false`, `approved=true`, and a runtime GitHub token.
-- Patch generation requires an approved scan result and keeps the patch in the browser until download.
+- The UI additionally requires typing the target `owner/repository` before a real PR call.
+- Patch generation requires an approved scan result and keeps the patch in the browser until download. It creates a report, Dependabot configuration when applicable, and secret-hygiene ignores; it does not claim to auto-rewrite vulnerable source code.
 - Uploaded archive scanning is intentionally size-limited in the UI. Use GitHub scanning for large repositories.
+- Static findings are heuristics and must be manually validated in application context. OSV checks are sent only for exact lockfile-backed versions, never for a lower bound extracted from a broad dependency range.
 
 ## Privacy
 
 Repository contents are processed by the user's local Anna Agent through the bundled Executa during local/dev operation. When Anna risk synthesis is enabled, a compact summary of scan metadata and top findings is sent to Anna's host sampling service. Matched secrets are redacted before being returned to the UI or included in generated reports.
+
+GitHub tokens are used only in memory for the requested private clone or approved real pull request. The UI clears token fields after every attempt, and tokens are not written to Anna Storage, reports, artifacts, or scan history.
+
+## Support
+
+Report defects or request help through [GitHub Issues](https://github.com/imthegoodboy/RepoGuardian-AI/issues). Include the app version, Anna Agent platform, scan source type, and a redacted error message. Never attach repository tokens or unredacted secrets.

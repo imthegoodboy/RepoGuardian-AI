@@ -1,7 +1,7 @@
 {
   "slug": "repoguardian-scanner",
   "name": "RepoGuardian Scanner",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "executa_type": "tool",
   "description": "Clones or unpacks repositories, scans dependencies, secrets, and code risks, optionally asks Anna host sampling for risk synthesis, and can create GitHub pull requests with generated security reports.",
   "tool_id": "tool-nikku696969-repoguardian-scanner-3tsnh6fp",

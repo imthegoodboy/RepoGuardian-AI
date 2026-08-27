@@ -17,6 +17,7 @@ describe("repoguardian-ai manifest and bundle", () => {
     expect(manifest.ui.host_api.chat).toEqual(["append_artifact"]);
     expect(manifest.ui.host_api.upload).toEqual(["inline"]);
     expect(manifest.ui.host_api.agent.session.auto).toBe(true);
+    expect(manifest.ui.host_api.agent.session.fixed.client_ids).toEqual([]);
   });
 
   it("uses the publish-time tool-id sidecar with a dev fallback", () => {
@@ -82,5 +83,26 @@ describe("repoguardian-ai manifest and bundle", () => {
     expect(app).toContain("saveHistorySafely");
     expect(app).toContain("report_available: Boolean(scan.report_markdown)");
     expect(app).not.toContain("report_markdown: scan.report_markdown");
+  });
+
+  it("opens directly on scan setup and exposes deep bounded analysis", () => {
+    const html = readFileSync(join(root, "bundle", "index.html"), "utf8");
+    const app = readFileSync(join(root, "bundle", "app.js"), "utf8");
+    expect(html).toMatch(/class="page is-active" id="page-scan"/);
+    expect(html).toContain('id="scan-profile"');
+    expect(html).toContain('id="max-bytes"');
+    expect(html).toContain('id="coverage-files"');
+    expect(html).toContain('id="finding-search"');
+    expect(app).toContain('page: "scan"');
+    expect(app).toContain("scan_profile:");
+    expect(app).toContain("compactCoverageForStorage");
+  });
+
+  it("requires typed repository confirmation for real pull requests", () => {
+    const html = readFileSync(join(root, "bundle", "index.html"), "utf8");
+    const app = readFileSync(join(root, "bundle", "app.js"), "utf8");
+    expect(html).toContain('id="pr-confirm-repo"');
+    expect(app).toContain("canonicalGithubRepository");
+    expect(app).toContain("to confirm the real pull request target");
   });
 });

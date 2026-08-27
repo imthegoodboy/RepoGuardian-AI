@@ -84,11 +84,15 @@ test("review-ready security workflow runs end to end through Anna harness", asyn
   });
 
   const archive = makeFixtureArchive(testInfo);
+  const listingDir = path.join(__dirname, "..", "..", "listing");
+  fs.mkdirSync(listingDir, { recursive: true });
   await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
   const frame = await appFrame(page);
 
   await expect(frame.locator("#conn-text")).toContainText("Connected to Anna", { timeout: 15000 });
-  await frame.getByRole("button", { name: /New Scan/i }).click();
+  await expect(frame.locator("#page-scan")).toHaveClass(/is-active/);
+  await expect(frame.locator("#scan-profile")).toHaveValue("deep");
+  await page.locator("iframe").first().screenshot({ path: path.join(listingDir, "01-deep-scan-workspace.png") });
   await frame.locator("#include-ai").uncheck({ force: true });
   await frame.locator("#dependency-network").uncheck({ force: true });
   await frame.locator("#archive-file").setInputFiles(archive);
@@ -96,9 +100,12 @@ test("review-ready security workflow runs end to end through Anna harness", asyn
 
   await expect(frame.locator("#scan-status")).toContainText("Scan complete:", { timeout: 180000 });
   await expect(frame.locator("#metric-secrets")).toContainText("1");
+  await expect(frame.locator("#coverage-files")).toContainText(/\d+ \/ 12000/);
+  await expect(frame.locator("#coverage-rules")).toContainText(/secret \+ \d+ code/);
   await expect(frame.locator("#workflow-list")).toContainText("Generate and download patch");
   await expect(frame.locator("#recent-findings")).toContainText(/secret|SQL|XSS|architecture|performance/i);
   await expect(frame.locator("#download-report-pdf-btn")).toHaveAttribute("aria-disabled", "false");
+  await page.locator("iframe").first().screenshot({ path: path.join(listingDir, "02-risk-dashboard.png") });
   const reportName = await frame.locator("#download-report-pdf-btn").getAttribute("download");
   expect(reportName).toMatch(/^repoguardian-report-.+\.pdf$/);
   const reportPdf = await frame.locator("#download-report-pdf-btn").evaluate(async (link) => {
@@ -115,6 +122,7 @@ test("review-ready security workflow runs end to end through Anna harness", asyn
   fs.writeFileSync(testInfo.outputPath(reportName), Buffer.from(reportPdf.bytes));
 
   await frame.getByRole("button", { name: /Findings/i }).click();
+  await page.locator("iframe").first().screenshot({ path: path.join(listingDir, "03-evidence-findings.png") });
   await expectCategoryVisible(frame, "secret");
   await expectCategoryVisible(frame, "injection");
   await expectCategoryVisible(frame, "xss");
@@ -123,6 +131,10 @@ test("review-ready security workflow runs end to end through Anna harness", asyn
   await frame.locator("#category-filter").selectOption("all");
   await frame.locator("#severity-filter").selectOption("critical");
   await expect(frame.locator("#all-findings-caption")).toHaveText(/[1-9]\d* shown from \d+ findings/);
+  await frame.locator("#severity-filter").selectOption("all");
+  await frame.locator("#finding-search").fill("shell");
+  await expect(frame.locator("#finding-list")).toContainText(/shell/i);
+  await frame.locator("#finding-search").fill("");
 
   await frame.getByRole("button", { name: /Patch/i }).click();
   await frame.locator("#generate-patch-btn").click();
@@ -170,4 +182,16 @@ test("review-ready security workflow runs end to end through Anna harness", asyn
     return ["error", "pageerror", "requestfailed"].includes(entry.type);
   });
   expect(unexpectedLogs).toEqual([]);
+});
+
+test("mobile scan workspace is usable without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 900 });
+  await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
+  const frame = await appFrame(page);
+  await expect(frame.locator("#page-scan")).toHaveClass(/is-active/);
+  await expect(frame.locator("#github-scan-btn")).toBeVisible();
+  const overflow = await frame.locator("html").evaluate((root) => root.scrollWidth - root.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  await frame.getByRole("button", { name: "Findings", exact: true }).click();
+  await expect(frame.locator("#finding-search")).toBeVisible();
 });
