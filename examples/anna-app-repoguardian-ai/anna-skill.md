@@ -96,5 +96,6 @@ After cutting, install the exact new version on an online Anna Agent, save its p
 - App Store shows `v—`: align `app.json`, package metadata, cut version, and listing sync; a draft push alone is not a published/cut version.
 - Screenshot review fails: publish clear English screenshots from the real app state, use a stable raw URL, and ensure the main CTA appears in the first standard viewport.
 - CLI shell variable failure in PowerShell: use `$ANNA_HOST`, never reserved `$Host`.
+- `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` from `apps push --dry-run` on Windows: this was reproduced with Anna CLI `0.1.49` on Node `24.14.1`; the identical dry-run completed under Node `22.23.2`. Run the release CLI with a supported Node 22 runtime (for example `npx --yes node@22 <anna-cli-js> ...`) and keep the app test harness and publish dry-run as separate processes. Treat a clean Node 22 exit, strict validation, and the server's real push/cut response as the release evidence.
 
 Final rule: build and test locally, publish the Executa, push/cut the app, install and retest the exact cut, then submit review. Never assume one stage performed the next.

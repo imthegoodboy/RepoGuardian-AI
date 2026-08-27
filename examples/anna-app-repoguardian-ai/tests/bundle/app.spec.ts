@@ -2,10 +2,21 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import manifest from "../../manifest.json" with { type: "json" };
+import appMeta from "../../app.json" with { type: "json" };
+import packageMeta from "../../package.json" with { type: "json" };
 
 const root = join(__dirname, "..", "..");
 
 describe("repoguardian-ai manifest and bundle", () => {
+  it("aligns release versions, bundled tool, and Marketplace assets", () => {
+    expect(appMeta.version).toBe("0.2.0");
+    expect(packageMeta.version).toBe(appMeta.version);
+    expect(manifest.required_executas[0].min_version).toBe("0.2.0");
+    expect(appMeta.bundled_executas["repoguardian-scanner"].path).toBe("./executas/repoguardian-scanner");
+    expect(appMeta.screenshots).toHaveLength(3);
+    expect(appMeta.screenshots.every((url) => url.startsWith("https://raw.githubusercontent.com/"))).toBe(true);
+  });
+
   it("declares only the host APIs used by the bundle", () => {
     expect(manifest.schema).toBe(2);
     expect(manifest.permissions).toEqual(
