@@ -23,30 +23,30 @@
         "supports_protocol": true,
         "binary_urls": {
           "darwin-arm64": {
-            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.4/tool-nikku696969-repoguardian-scanner-3tsnh6fp-darwin-arm64.tar.gz",
-            "sha256": "187df3ed46d672af250fc9a4f01f34f54b1db6d451109ab39b1ed492317d26f5",
-            "size": 17557554,
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.2.0/tool-nikku696969-repoguardian-scanner-3tsnh6fp-darwin-arm64.tar.gz",
+            "sha256": "0a12449c63c0a2856d1caa2bb56a6eca6c51cfe625974fa4aafb3ba3402df24d",
+            "size": 17579985,
             "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
             "format": "tar.gz"
           },
           "darwin-x86_64": {
-            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.4/tool-nikku696969-repoguardian-scanner-3tsnh6fp-darwin-x86_64.tar.gz",
-            "sha256": "ea8bf181d07804efb454d7c78959a42ed7c77ce387f18b4269a549b358fc1e47",
-            "size": 18697227,
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.2.0/tool-nikku696969-repoguardian-scanner-3tsnh6fp-darwin-x86_64.tar.gz",
+            "sha256": "21734b76e4cb9666f5c4b2a30496e0e73c4602dd1223e5e07b70f9fc8ae79ec2",
+            "size": 18716253,
             "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
             "format": "tar.gz"
           },
           "linux-x86_64": {
-            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.4/tool-nikku696969-repoguardian-scanner-3tsnh6fp-linux-x86_64.tar.gz",
-            "sha256": "3a2e6ff426391bf52e6e2bf93b227e1f1653a31d32ca5d8e55e2d4e23a302a54",
-            "size": 44404697,
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.2.0/tool-nikku696969-repoguardian-scanner-3tsnh6fp-linux-x86_64.tar.gz",
+            "sha256": "e5dc749b92d6b84ba405a21632e5884b3c7edbc639acd5953acca027f33381cc",
+            "size": 44487114,
             "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
             "format": "tar.gz"
           },
           "windows-x86_64": {
-            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.1.4/tool-nikku696969-repoguardian-scanner-3tsnh6fp-windows-x86_64.zip",
-            "sha256": "70b755a418a1035793b74fded92b56be74f68cae0ff8cedfdcd3c16c287a003b",
-            "size": 19449122,
+            "url": "https://github.com/imthegoodboy/RepoGuardian-AI/releases/download/repoguardian-scanner-v0.2.0/tool-nikku696969-repoguardian-scanner-3tsnh6fp-windows-x86_64.zip",
+            "sha256": "65cb056846f4ada9197127a622ab912735ac4d68c5238f1b1adf4c3ee0a47d72",
+            "size": 19467806,
             "entrypoint": "bin/tool-nikku696969-repoguardian-scanner-3tsnh6fp",
             "format": "zip"
           }
